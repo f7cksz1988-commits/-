@@ -163,6 +163,9 @@ main{padding-block:4px 120px}
 .board-empty{position:absolute;inset:0;display:grid;place-items:center;text-align:center;padding:24px;color:var(--muted);font-size:13.5px;pointer-events:none}
 .ptools{display:flex;gap:6px;flex-wrap:wrap;min-height:34px;align-items:center}
 .thumb.cutimg img{padding:6%}
+.zoomwrap{display:grid;gap:6px;min-width:0}
+.zoomwrap .thumb{touch-action:none;cursor:grab}
+.zoomctl{display:flex;gap:8px;align-items:center}
 .frame{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
 .frame .thumb{width:150px;flex:none;cursor:grab;touch-action:none;border:1px dashed var(--muted)}
 .frame-side{display:grid;gap:8px;flex:1 1 160px;min-width:0}
@@ -828,7 +831,8 @@ function sheetItem(){
   if(i.note)rows.push(['备注',esc(i.note)]);
   const inOut=S.outfits.filter(o=>(o.pieces||[]).some(p=>p.id===i.id));
   let h=head(K.label);
-  h+=`<div class="tag">${thumbHTML(i,'',true)}<div class="tag-card"><h3>${esc(itemName(i))}</h3><p class="crumb">${esc(c.label)} › ${esc(i.sub||'')}${i.sample?' · 示例':''}</p><dl class="kv">${rows.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl></div></div>`;
+  const ph=photoSrc(i);const v=i.view||{z:1,x:0,y:0};
+  h+=`<div class="tag">${ph?`<div class="zoomwrap"><div class="thumb ${hasCut(i)?'cutimg':''}" id="frameThumb"><img src="${ph}" alt="" draggable="false" style="${viewStyle(v)}"></div><div class="zoomctl"><label class="mini-range">放大<input type="range" id="f-zoom" min="1" max="3" step="0.05" value="${v.z||1}" aria-label="放大图片"></label><button class="btn sm ghost" data-action="frame-reset">看整张</button></div><span class="hint">放大后可以用手指拖动图片。调整会自动保存，列表里的小图也会一起变。</span></div>`:thumbHTML(i)}<div class="tag-card"><h3>${esc(itemName(i))}</h3><p class="crumb">${esc(c.label)} › ${esc(i.sub||'')}${i.sample?' · 示例':''}</p><dl class="kv">${rows.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl></div></div>`;
   if(inOut.length)h+=`<div class="field"><span class="lbl">出现在这些搭配里</span><div class="chips">${inOut.map(o=>`<button class="chip" data-action="open-outfit" data-id="${o.id}">${esc(o.name)}</button>`).join('')}</div></div>`;
   h+=`<div class="sheet-actions">${i.kind==='clothes'&&!isGone(i)?'<button class="btn primary" data-action="worn-item">今天穿了 +1</button>':''}${!isGone(i)?'<button class="btn soft" data-action="tryon">放到拼搭板</button>':''}<button class="btn" data-action="edit-item">编辑</button></div>`;
   if(srcOf(i,'orig'))h+=`<div class="sheet-actions"><button class="btn sm" data-action="item-cut">${hasCut(i)?'重新抠图':'抠图'}</button>${hasCut(i)?'<button class="btn sm ghost" data-action="item-uncut">改回原图</button>':''}</div>`;
@@ -942,6 +946,7 @@ async function onClick(e){
     case 'item-cut':{const i=getItem(sheet.id);openCut(srcOf(i,'orig'),async url=>{toast('正在保存抠好的图…');await storeImage(i,'cut',url);save();renderSheet();render();toast('抠好了')});break}
     case 'item-uncut':{const i=getItem(sheet.id);dropImage(i,'cut');save();renderSheet();render();toast('已改回原图');break}
     case 'f-cut':{syncDraft();const d=sheet.draft;const it=d.id&&getItem(d.id);const src=d.photoNew||(it&&srcOf(it,'orig'));if(src)openCut(src,url=>{d.cutNew=url;d.cutRemoved=false;renderSheet()});break}
+    case 'frame-reset':{const i=getItem(sheet.id);if(i){delete i.view;save();renderSheet();render()}break}
     case 'f-frame-reset':syncDraft();sheet.draft.view=null;renderSheet();break;
     case 'f-uncut':syncDraft();sheet.draft.cutNew=null;sheet.draft.cutRemoved=true;renderSheet();break;
     case 'bslot':ui.bslot=val;render();break;
@@ -1030,13 +1035,16 @@ document.addEventListener('pointerup',endDrag);document.addEventListener('pointe
 /* ============ list framing (zoom + pan) in the edit form ============ */
 let fdrag=null;
 function frameClamp(v){const m=(v.z-1)/2*100;v.x=Math.max(-m,Math.min(m,v.x));v.y=Math.max(-m,Math.min(m,v.y));return v}
-function frameApply(){const img=document.querySelector('#frameThumb img');if(img&&sheet&&sheet.draft)img.style.transform=viewStyle(sheet.draft.view).replace('transform:','')||'none'}
-document.addEventListener('input',e=>{if(e.target.id!=='f-zoom'||!sheet||!sheet.draft)return;const v=sheet.draft.view=sheet.draft.view||{z:1,x:0,y:0};v.z=+e.target.value;frameClamp(v);frameApply()});
-document.addEventListener('pointerdown',e=>{const t=e.target.closest('#frameThumb');if(!t||!sheet||!sheet.draft)return;e.preventDefault();const v=sheet.draft.view=sheet.draft.view||{z:1,x:0,y:0};
+function frameTarget(){if(!sheet)return null;if(sheet.type==='form')return sheet.draft;if(sheet.type==='item')return getItem(sheet.id)||null;return null}
+function frameApply(){const t=frameTarget();const img=document.querySelector('#frameThumb img');if(img&&t)img.style.transform=viewStyle(t.view).replace('transform:','')||'none'}
+function frameCommit(){const t=frameTarget();if(!t||sheet.type!=='item')return;const v=t.view;if(v&&(v.z>1.001||Math.abs(v.x)>0.5||Math.abs(v.y)>0.5))t.view={z:+(+v.z).toFixed(2),x:Math.round(v.x),y:Math.round(v.y)};else delete t.view;save();render()}
+document.addEventListener('input',e=>{if(e.target.id!=='f-zoom')return;const t=frameTarget();if(!t)return;const v=t.view=t.view||{z:1,x:0,y:0};v.z=+e.target.value;frameClamp(v);frameApply()});
+document.addEventListener('change',e=>{if(e.target.id==='f-zoom')frameCommit()});
+document.addEventListener('pointerdown',e=>{const t=e.target.closest('#frameThumb');const tg=frameTarget();if(!t||!tg)return;e.preventDefault();const v=tg.view=tg.view||{z:1,x:0,y:0};
   if(v.z<=1){toast('先拖动「放大」滑块，再拖图片');return}
   fdrag={w:t.getBoundingClientRect().width,sx:e.clientX,sy:e.clientY,ox:v.x,oy:v.y};try{t.setPointerCapture(e.pointerId)}catch(err){}});
-document.addEventListener('pointermove',e=>{if(!fdrag)return;const v=sheet.draft.view;v.x=fdrag.ox+(e.clientX-fdrag.sx)/fdrag.w*100;v.y=fdrag.oy+(e.clientY-fdrag.sy)/fdrag.w*100;frameClamp(v);frameApply()});
-document.addEventListener('pointerup',()=>{fdrag=null});
+document.addEventListener('pointermove',e=>{if(!fdrag)return;const t=frameTarget();if(!t||!t.view)return;const v=t.view;v.x=fdrag.ox+(e.clientX-fdrag.sx)/fdrag.w*100;v.y=fdrag.oy+(e.clientY-fdrag.sy)/fdrag.w*100;frameClamp(v);frameApply()});
+document.addEventListener('pointerup',()=>{if(fdrag){fdrag=null;frameCommit()}});
 
 /* ============ cutout editor ============ */
 const Cut={mode:'erase',bg:'check',undo:[]};
