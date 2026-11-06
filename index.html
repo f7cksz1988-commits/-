@@ -432,9 +432,9 @@ function applySnap(snap){
 async function migrate(){
   if(!Cloud.localHad){Cloud.ephemeral=true;return} // nothing of yours yet: show examples, save on first change
   Cloud.dirty=true;setStatus();
-  if(Cloud.assets){for(const [k,d] of [...photoData]){const [iid,w]=splitKey(k);const i=getItem(iid);if(!i)continue;try{const r=await Cloud.assets.upload(dataURLtoBlob(d),{type:mimeOf(d)});i[IMG[w][0]]=r.id}catch(e){}}}
+  if(Cloud.imgCol){for(const [k,d] of [...photoData]){if(k.includes('@'))continue;const [iid,w]=splitKey(k);const i=getItem(iid);if(!i)continue;try{await storeImage(i,w,d)}catch(e){}}}
   Cloud.synced=new Map();Cloud.dirty=false;await flush();
-  if(!Cloud.error){DB.del('kv','state').catch(()=>{});if(Cloud.assets)DB.clear('photos').catch(()=>{})}
+  if(!Cloud.error){DB.del('kv','state').catch(()=>{})}
 }
 async function connectCloud(){
   const c=window.claude;if(!c||typeof c.use!=='function')return;
@@ -443,7 +443,7 @@ async function connectCloud(){
   if(!db||!user){Cloud.status='local';setStatus();return}
   const id=await user.id();if(!id){Cloud.status='local';setStatus();return}
   c.use('assets').then(a=>{Cloud.assets=a}).catch(()=>{});
-  const col=db.collection('data/users/'+id);
+  const col=db.collection('data/users/'+id);Cloud.imgCol=db.collection('data/users/'+id+'/img/chunks');
   const timer=setTimeout(()=>{if(!Cloud.on){Cloud.status='unreachable';setStatus()}},10000);
   col.onSnapshot(async snap=>{
     if(!Cloud.on){
@@ -451,7 +451,7 @@ async function connectCloud(){
       clearTimeout(timer);Cloud.assets=Cloud.assets||await c.use('assets').catch(()=>null);
       Cloud.on=true;Cloud.col=col;Cloud.status='on';clearTimeout(saveT);
       if(snap.empty)await migrate();else applySnap(snap);
-      render();setStatus();setTimeout(ensureDisps,1500);return;
+      render();setStatus();setTimeout(async()=>{await moveAssetImages();ensureDisps()},1500);return;
     }
     applySnap(snap);
   },err=>{clearTimeout(timer);Cloud.status=Cloud.on?'error':'unreachable';setStatus()});
@@ -468,16 +468,62 @@ function setStatus(){
 function mimeOf(d){return (String(d).match(/^data:([^;,]+)/)||[])[1]||'image/jpeg'}
 const IMG={orig:['photo',''],cut:['cut','_cut'],disp:['disp','_disp']};
 function splitKey(k){for(const w of ['cut','disp'])if(k.endsWith(IMG[w][1]))return [k.slice(0,-IMG[w][1].length),w];return [k,'orig']}
-function srcOf(i,which){if(!i)return null;const [key,suf]=IMG[which];return i[key]?'/_blob/'+i[key]:photoURL.get(i.id+suf)||null}
+/* images live in the record database as chunked data URLs: data/users/<id>/img/chunks/<item>_<which>_<k>,
+   item.imgs[which]={v,n}; every device caches a copy locally under "<item><suffix>@<v>".
+   Older items may still point at artifact assets (item.photo/cut/disp ids); those are moved over when readable. */
+const CHUNK=200000;
+function hasImg(i,w){if(!i)return false;const [key,suf]=IMG[w];return !!((i.imgs&&i.imgs[w])||i[key]||photoURL.has(i.id+suf))}
+function srcOf(i,which){
+  if(!i)return null;const [key,suf]=IMG[which];const m=i.imgs&&i.imgs[which];
+  if(m){const u=photoURL.get(i.id+suf+'@'+m.v);if(u)return u;requestImg(i,which);return null}
+  return i[key]?'/_blob/'+i[key]:photoURL.get(i.id+suf)||null;
+}
+const imgReq=new Map();let rsT;
+function renderSoon(){clearTimeout(rsT);rsT=setTimeout(()=>{render();if(sheet&&['item','outfit'].includes(sheet.type))renderSheet();else if(sheet&&sheet.type==='form'){syncDraft();renderSheet()}},120)}
+function requestImg(i,w){
+  const m=i.imgs[w];const lk=i.id+IMG[w][1]+'@'+m.v;if(imgReq.has(lk))return imgReq.get(lk);
+  const pr=(async()=>{
+    if(!Cloud.imgCol)return null;
+    try{const snaps=await Promise.all(Array.from({length:m.n},(_,k)=>retry(()=>Cloud.imgCol.doc(`${i.id}_${w}_${k}`).get())));
+      if(snaps.some(sn=>!sn.exists||sn.data().v!==m.v))throw new Error('incomplete');
+      const data=snaps.map(sn=>sn.data().d).join('');setPhoto(lk,data);DB.set('photos',lk,data).catch(()=>{});renderSoon();return photoURL.get(lk)}
+    catch(e){setTimeout(()=>imgReq.delete(lk),8000);return null}
+  })();
+  imgReq.set(lk,pr);return pr;
+}
+async function imgURL(i,w){const u=srcOf(i,w);if(u)return u;const m=i.imgs&&i.imgs[w];return m?await requestImg(i,w):null}
+async function imgData(i,w){const u=await imgURL(i,w);if(!u)return null;const m=i.imgs&&i.imgs[w];const lk=i.id+IMG[w][1]+(m?'@'+m.v:'');if(photoData.has(lk))return photoData.get(lk);try{const r=await fetch(u);if(r.ok)return await blobToDataURL(await r.blob())}catch(e){}return null}
 function baseSrc(i){return srcOf(i,'cut')||srcOf(i,'orig')}
 function photoSrc(i){return srcOf(i,'disp')||baseSrc(i)}
-function hasCut(i){return !!srcOf(i,'cut')}
+function hasCut(i){return hasImg(i,'cut')}
 async function storeImage(item,which,dataURL){
   const [key,suf]=IMG[which],lk=item.id+suf;
-  if(Cloud.on&&Cloud.assets){try{const r=await Cloud.assets.upload(dataURLtoBlob(dataURL),{type:mimeOf(dataURL)});if(item[key]&&item[key]!==r.id)Cloud.assets.delete(item[key]).catch(()=>{});item[key]=r.id;rmPhoto(lk);return}catch(e){toast('图片没传上云端，先存在这台设备上')}}
-  delete item[key];setPhoto(lk,dataURL);DB.set('photos',lk,dataURL).catch(()=>{storageOK=false;renderBanner()});
+  if(Cloud.on&&Cloud.imgCol){try{
+    const v=uid(),parts=[];for(let k=0;k<dataURL.length;k+=CHUNK)parts.push(dataURL.slice(k,k+CHUNK));
+    for(let k=0;k<parts.length;k++)await retry(()=>Cloud.imgCol.doc(`${item.id}_${which}_${k}`).set({v,n:parts.length,k,d:parts[k]}));
+    const old=item.imgs&&item.imgs[which];
+    if(old){for(let k=parts.length;k<old.n;k++)Cloud.imgCol.doc(`${item.id}_${which}_${k}`).delete().catch(()=>{});rmPhoto(lk+'@'+old.v)}
+    item.imgs={...(item.imgs||{}),[which]:{v,n:parts.length}};
+    setPhoto(lk+'@'+v,dataURL);DB.set('photos',lk+'@'+v,dataURL).catch(()=>{});
+    if(item[key]){if(Cloud.assets)Cloud.assets.delete(item[key]).catch(()=>{});delete item[key]}
+    rmPhoto(lk);return;
+  }catch(e){toast(e&&e.code==='quota_exceeded'?'云端空间满了，图片先存在这台设备上':'图片没传上云端，先存在这台设备上')}}
+  delete item[key];if(item.imgs)delete item.imgs[which];setPhoto(lk,dataURL);DB.set('photos',lk,dataURL).catch(()=>{storageOK=false;renderBanner()});
 }
-function dropImage(item,which){const [key,suf]=IMG[which],lk=item.id+suf;if(item[key]&&Cloud.assets)Cloud.assets.delete(item[key]).catch(()=>{});delete item[key];rmPhoto(lk)}
+function dropImage(item,which){
+  const [key,suf]=IMG[which],lk=item.id+suf;const m=item.imgs&&item.imgs[which];
+  if(m){if(Cloud.imgCol)for(let k=0;k<m.n;k++)Cloud.imgCol.doc(`${item.id}_${which}_${k}`).delete().catch(()=>{});rmPhoto(lk+'@'+m.v);delete item.imgs[which]}
+  if(item[key]&&Cloud.assets)Cloud.assets.delete(item[key]).catch(()=>{});delete item[key];rmPhoto(lk);
+}
+/* move images that still live as artifact assets into the database, from any device that can read them */
+let movingAssets=false;
+async function moveAssetImages(){
+  if(movingAssets||!Cloud.on||!Cloud.imgCol)return;movingAssets=true;let moved=0;
+  try{for(const i of S.items)for(const w in IMG){const id=i[IMG[w][0]];if(!id||(i.imgs&&i.imgs[w]))continue;
+    try{const r=await fetch('/_blob/'+id);if(!r.ok)continue;const d=await blobToDataURL(await r.blob());if(!/^data:image\//.test(d))continue;await storeImage(i,w,d);moved++}catch(e){}}
+  }finally{movingAssets=false}
+  if(moved){save();render()}
+}
 function blobToDataURL(b){return new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=rej;fr.readAsDataURL(b)})}
 function freshState(){return{v:2,items:[],outfits:[],board:{pieces:[]},custom:{},sample:false}}
 function boardSlot(i){if(!i)return 'acc';if(i.kind!=='clothes')return 'beauty';return {top:'top',outer:'outer',pants:'bottom',skirt:'bottom',dress:'dress',shoes:'shoes',bag:'bag',acc:'acc',inner:'inner'}[i.cat]||'acc'}
@@ -615,14 +661,14 @@ async function cropFromView(src,v,isCut){
   if(!isCut)return c.toDataURL('image/jpeg',.88);let u=c.toDataURL('image/webp',.9);if(!u.startsWith('data:image/webp'))u=c.toDataURL('image/png');return u;
 }
 let dispBusy=false;
-async function ensureDisps(){if(dispBusy)return;dispBusy=true;try{const todo=S.items.filter(x=>hasView(x.view)&&!srcOf(x,'disp')&&baseSrc(x));for(const i of todo){await refreshDisp(i)}if(todo.length){save();render()}}finally{dispBusy=false}}
+async function ensureDisps(){if(dispBusy)return;dispBusy=true;try{const todo=S.items.filter(x=>hasView(x.view)&&!hasImg(x,'disp')&&(hasImg(x,'cut')||hasImg(x,'orig')));for(const i of todo){await refreshDisp(i)}if(todo.length){save();render()}}finally{dispBusy=false}}
 async function refreshDisp(item){
-  const b=baseSrc(item);
+  const isCut=hasImg(item,'cut');const b=await imgURL(item,isCut?'cut':'orig');
   if(!b||!hasView(item.view)){dropImage(item,'disp');return}
-  try{await storeImage(item,'disp',await cropFromView(b,item.view,!!srcOf(item,'cut')))}catch(e){dropImage(item,'disp')}
+  try{await storeImage(item,'disp',await cropFromView(b,item.view,isCut))}catch(e){dropImage(item,'disp')}
 }
 function viewStyle(v){return v&&(v.z>1||v.x||v.y)?`transform:translate(${v.x||0}%,${v.y||0}%) scale(${v.z||1})`:''}
-function thumbHTML(i,badge='',full=false){const u=photoSrc(i);if(srcOf(i,'disp'))full=true;return `<div class="thumb ${u&&hasCut(i)?'cutimg':''}">${u?`<img src="${u}" alt="" loading="lazy" style="${full?'':viewStyle(i.view)}">`:thumbSVG(i)}${badge}</div>`}
+function thumbHTML(i,badge='',full=false){const u=photoSrc(i);if(hasImg(i,'disp'))full=true;return `<div class="thumb ${u&&hasCut(i)?'cutimg':''}">${u?`<img src="${u}" alt="" loading="lazy" style="${full?'':viewStyle(i.view)}">`:thumbSVG(i)}${badge}</div>`}
 function getItem(id){return S.items.find(i=>i.id===id)}
 /* ============ UI state ============ */
 const ui={tab:'clothes',season:'all',cat:'all',sub:'all',showGone:false,bcat:{skincare:'all',makeup:'all'},bstatus:{skincare:'all',makeup:'all'},q:'',bslot:'top',dseason:'all',sel:-1,editingOutfit:null,check:{kind:'clothes',cat:'top',sub:'',color:''}};
@@ -804,7 +850,7 @@ async function saveDraft(){
   if(d.photoNew||d.photoRemoved||d.cutRemoved)dropImage(item,'cut');
   if(d.cutNew)await storeImage(item,'cut',d.cutNew);
   const vk=JSON.stringify(item.view||null),ok=JSON.stringify(old.view||null);
-  if(d.photoNew||d.photoRemoved||d.cutNew||d.cutRemoved||vk!==ok||(hasView(item.view)&&!srcOf(item,'disp')))await refreshDisp(item);
+  if(d.photoNew||d.photoRemoved||d.cutNew||d.cutRemoved||vk!==ok||(hasView(item.view)&&!hasImg(item,'disp')))await refreshDisp(item);
   if(isNew){item.created=Date.now();S.items.push(item)}
   save();closeSheet();render();toast(isNew?'已添加「'+itemName(item)+'」':'已保存');
 }
@@ -837,7 +883,7 @@ function sheetItem(){
   h+=`<div class="tag">${sheet.framing&&bs?`<div class="zoomwrap"><div class="thumb ${hasCut(i)?'cutimg':''}" id="frameThumb"><img src="${bs}" alt="" draggable="false" style="${viewStyle(fv)}"></div><div class="zoomctl"><label class="mini-range">放大<input type="range" id="f-zoom" min="1" max="3" step="0.05" value="${fv.z||1}" aria-label="放大图片"></label></div><span class="hint">拖滑块放大，再用手指拖动图片，框里看到的就是以后显示的样子。</span><div class="photo-acts"><button class="btn sm primary" data-action="frame-done">完成</button><button class="btn sm" data-action="frame-full">用整张图</button><button class="btn sm ghost" data-action="frame-cancel">取消</button></div></div>`:`<div class="zoomwrap">${thumbHTML(i,'',true)}${bs?`<div class="photo-acts"><button class="btn sm" data-action="frame-start">调整显示范围</button></div>`:''}</div>`}<div class="tag-card"><h3>${esc(itemName(i))}</h3><p class="crumb">${esc(c.label)} › ${esc(i.sub||'')}${i.sample?' · 示例':''}</p><dl class="kv">${rows.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl></div></div>`;
   if(inOut.length)h+=`<div class="field"><span class="lbl">出现在这些搭配里</span><div class="chips">${inOut.map(o=>`<button class="chip" data-action="open-outfit" data-id="${o.id}">${esc(o.name)}</button>`).join('')}</div></div>`;
   h+=`<div class="sheet-actions">${i.kind==='clothes'&&!isGone(i)?'<button class="btn primary" data-action="worn-item">今天穿了 +1</button>':''}${!isGone(i)?'<button class="btn soft" data-action="tryon">放到拼搭板</button>':''}<button class="btn" data-action="edit-item">编辑</button></div>`;
-  if(srcOf(i,'orig'))h+=`<div class="sheet-actions"><button class="btn sm" data-action="item-cut">${hasCut(i)?'重新抠图':'抠图'}</button>${hasCut(i)?'<button class="btn sm ghost" data-action="item-uncut">改回原图</button>':''}</div>`;
+  if(hasImg(i,'orig'))h+=`<div class="sheet-actions"><button class="btn sm" data-action="item-cut">${hasCut(i)?'重新抠图':'抠图'}</button>${hasCut(i)?'<button class="btn sm ghost" data-action="item-uncut">改回原图</button>':''}</div>`;
   if(i.kind!=='clothes'&&i.status!=='用完了')h+=`<div class="sheet-actions"><button class="btn ghost" data-action="used-up">标记为用完了</button></div>`;
   return h;
 }
@@ -919,8 +965,7 @@ function randomOutfit(){
 }
 async function exportData(){
   const photos={};
-  const grab=async(k,local,asset)=>{if(photoData.has(local))photos[k]=photoData.get(local);else if(asset){try{const r=await fetch('/_blob/'+asset);if(r.ok)photos[k]=await blobToDataURL(await r.blob())}catch(e){}}};
-  for(const i of S.items)for(const w in IMG){const k=i.id+IMG[w][1];await grab(k,k,i[IMG[w][0]])}
+  for(const i of S.items)for(const w in IMG){const d=await imgData(i,w);if(d)photos[i.id+IMG[w][1]]=d}
   return JSON.stringify({app:'wardrobe-journal',version:2,exportedAt:new Date().toISOString(),state:S,photos});
 }
 function parseImport(txt){const o=JSON.parse(txt);if(!o||o.app!=='wardrobe-journal'||!o.state||!Array.isArray(o.state.items))throw new Error('bad');return o}
@@ -961,9 +1006,9 @@ async function onClick(e){
     case 'worn-item':{const i=getItem(sheet.id);i.wearCount=(i.wearCount||0)+1;i.lastWorn=todayStr();save();renderSheet();render();toast('记下了，第 '+i.wearCount+' 次穿');break}
     case 'used-up':{const i=getItem(sheet.id);i.status='用完了';save();renderSheet();render();toast('已标记为用完了');break}
     case 'tryon':{const i=getItem(sheet.id);if(!S.board.pieces.some(p=>p.id===i.id))togglePiece(i.id);ui.bslot=boardSlot(i);save();closeSheet();go('board');break}
-    case 'item-cut':{const i=getItem(sheet.id);openCut(srcOf(i,'orig'),async url=>{toast('正在保存抠好的图…');await storeImage(i,'cut',url);await refreshDisp(i);save();renderSheet();render();toast('抠好了')});break}
+    case 'item-cut':{const i=getItem(sheet.id);const src=await imgURL(i,'orig');if(!src){toast('原图还在加载，稍等再试');break}openCut(src,async url=>{toast('正在保存抠好的图…');await storeImage(i,'cut',url);await refreshDisp(i);save();renderSheet();render();toast('抠好了')});break}
     case 'item-uncut':{const i=getItem(sheet.id);dropImage(i,'cut');await refreshDisp(i);save();renderSheet();render();toast('已改回原图');break}
-    case 'f-cut':{syncDraft();const d=sheet.draft;const it=d.id&&getItem(d.id);const src=d.photoNew||(it&&srcOf(it,'orig'));if(src)openCut(src,url=>{d.cutNew=url;d.cutRemoved=false;renderSheet()});break}
+    case 'f-cut':{syncDraft();const d=sheet.draft;const it=d.id&&getItem(d.id);const src=d.photoNew||(it&&await imgURL(it,'orig'));if(src)openCut(src,url=>{d.cutNew=url;d.cutRemoved=false;renderSheet()});break}
     case 'frame-start':{const i=getItem(sheet.id);sheet.framing=true;sheet.fv={view:i.view?{...i.view}:{z:1,x:0,y:0}};renderSheet();break}
     case 'frame-cancel':sheet.framing=false;renderSheet();break;
     case 'frame-full':case 'frame-done':{const i=getItem(sheet.id);const v=sheet.fv.view;if(a==='frame-full'||!hasView(v))delete i.view;else i.view={z:+(+v.z).toFixed(2),x:Math.round(v.x||0),y:Math.round(v.y||0)};
