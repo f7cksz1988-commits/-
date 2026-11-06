@@ -11,7 +11,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes"><!--R-->
 <meta name="mobile-web-app-capable" content="yes"><!--R-->
 <meta name="apple-mobile-web-app-title" content="我的衣柜"><!--R-->
-<meta name="theme-color" content="#F2F8F1"><!--R-->
+<meta name="theme-color" content="#F5FAEE"><!--R-->
 <style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}*{box-sizing:border-box}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style><!--R-->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -19,25 +19,25 @@
 <style>
 /* Layout: one-column phone app — sticky header, scrolling content, fixed bottom tab bar; widens to a centred 980px column on desktop. */
 :root{
-  --bg:#F2F8F1; --surface:#FFFFFF; --tile:#E5F0E4; --ink:#22372A; --muted:#677B6E; --line:#D3E4D3;
-  --accent:#A7DBB3; --accent-ink:#173323; --accent-soft:#E0F2E3; --accent-text:#3A8756;
-  --teal:#2F7471; --teal-soft:#DCEFEC; --warn:#A9501C; --warn-soft:#FBE8DA; --ok:#2E7550; --ok-soft:#DDF1E3;
-  --board:#FAFDF9; --board-dot:#DCEADC; --shadow:0 1px 2px rgba(34,55,42,.05),0 6px 20px rgba(34,55,42,.08);
+  --bg:#F5FAEE; --surface:#FFFFFF; --tile:#E9F3DC; --ink:#24361A; --muted:#6A7B5E; --line:#D8E8C5;
+  --accent:#95CF55; --accent-ink:#18300A; --accent-soft:#E5F4D0; --accent-text:#4A8A1C;
+  --teal:#2F7471; --teal-soft:#DCEFEC; --warn:#A9501C; --warn-soft:#FBE8DA; --ok:#2F7A2E; --ok-soft:#E0F2D8;
+  --board:#FBFDF7; --board-dot:#E0EDCF; --shadow:0 1px 2px rgba(34,55,42,.05),0 6px 20px rgba(34,55,42,.08);
   --f-display:"Noto Serif SC","Songti SC","STSong",serif;
   --f-body:system-ui,-apple-system,"PingFang SC","Hiragino Sans GB","Microsoft YaHei","Noto Sans SC",sans-serif;
   --f-mono:"DM Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
   --r:14px;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#131A15; --surface:#1B241E; --tile:#233028; --ink:#E5F0E7; --muted:#9AAEA1; --line:#2E3D33;
-  --accent:#8FCB9D; --accent-ink:#10251A; --accent-soft:#1F3428; --accent-text:#98D6A8;
+  --bg:#141A10; --surface:#1C2416; --tile:#26311E; --ink:#E9F2DF; --muted:#A2B293; --line:#314027;
+  --accent:#8FCC4F; --accent-ink:#15260A; --accent-soft:#25381A; --accent-text:#A8DB70;
   --teal:#83C6C3; --teal-soft:#1D3433; --warn:#F2A473; --warn-soft:#3B2619; --ok:#86CFA2; --ok-soft:#1D3326;
-  --board:#18211B; --board-dot:#26332A; --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.25); color-scheme:dark}}
+  --board:#19210F; --board-dot:#2A3720; --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.25); color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#131A15; --surface:#1B241E; --tile:#233028; --ink:#E5F0E7; --muted:#9AAEA1; --line:#2E3D33;
-  --accent:#8FCB9D; --accent-ink:#10251A; --accent-soft:#1F3428; --accent-text:#98D6A8;
+  --bg:#141A10; --surface:#1C2416; --tile:#26311E; --ink:#E9F2DF; --muted:#A2B293; --line:#314027;
+  --accent:#8FCC4F; --accent-ink:#15260A; --accent-soft:#25381A; --accent-text:#A8DB70;
   --teal:#83C6C3; --teal-soft:#1D3433; --warn:#F2A473; --warn-soft:#3B2619; --ok:#86CFA2; --ok-soft:#1D3326;
-  --board:#18211B; --board-dot:#26332A; --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.25); color-scheme:dark}
+  --board:#19210F; --board-dot:#2A3720; --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.25); color-scheme:dark}
 
 html{-webkit-text-size-adjust:100%}
 body{background:var(--bg);color:var(--ink);font:15px/1.55 var(--f-body);-webkit-tap-highlight-color:transparent}
@@ -241,7 +241,7 @@ main{padding-block:4px 120px}
 .cut-stage canvas{max-width:100%;max-height:50vh;touch-action:none;display:block;cursor:crosshair}
 .cut-stage canvas.bg-check{background-color:#fff;background-image:linear-gradient(45deg,#e3e3e3 25%,transparent 25%,transparent 75%,#e3e3e3 75%),linear-gradient(45deg,#e3e3e3 25%,transparent 25%,transparent 75%,#e3e3e3 75%);background-size:16px 16px;background-position:0 0,8px 8px}
 .cut-stage canvas.bg-white{background:#fff}
-.cut-stage canvas.bg-green{background:#BFE6C8}
+.cut-stage canvas.bg-green{background:#C7E8A0}
 .cut-stage canvas.bg-dark{background:#2a2f2c}
 .cut-row{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:10px}
 .mini-range{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);flex:1 1 150px}
