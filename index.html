@@ -53,6 +53,12 @@ button{cursor:pointer}
 .top-row{display:flex;align-items:center;gap:12px;padding-block:12px 8px}
 .brand{flex:1;min-width:0}
 .brand h1{font:700 22px/1.2 var(--f-display);margin:0;letter-spacing:.02em}
+.brand-line{display:flex;align-items:center;gap:8px;min-width:0}
+.sync{display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:999px;border:0;font-size:11.5px;font-weight:600;background:var(--tile);color:var(--muted);white-space:nowrap}
+.sync::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.sync.ok{background:var(--ok-soft);color:var(--ok)}
+.sync.busy{background:var(--teal-soft);color:var(--teal)}
+.sync.bad{background:var(--warn-soft);color:var(--warn)}
 .brand p{margin:2px 0 0;color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .icon-btn{display:inline-grid;place-items:center;width:40px;height:40px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--ink);flex:none}
 .icon-btn svg{width:20px;height:20px}
@@ -233,7 +239,7 @@ main{padding-block:4px 120px}
 <header class="top" id="top">
   <div class="wrap">
     <div class="top-row">
-      <div class="brand"><h1>衣橱手账</h1><p id="topStat">记下你有的，就不会再买重复</p></div>
+      <div class="brand"><div class="brand-line"><h1>衣橱手账</h1><button class="sync" id="sync" data-action="settings" hidden></button></div><p id="topStat">记下你有的，就不会再买重复</p></div>
       <button class="icon-btn" data-action="settings" aria-label="统计与备份">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>
       </button>
@@ -334,7 +340,80 @@ const DB={db:null,
 let S=null; const photoData=new Map(), photoURL=new Map(); let storageOK=true;
 function setPhoto(id,data){photoData.set(id,data);if(photoURL.has(id))URL.revokeObjectURL(photoURL.get(id));try{photoURL.set(id,URL.createObjectURL(dataURLtoBlob(data)))}catch(e){photoURL.set(id,data)}}
 function rmPhoto(id){photoData.delete(id);if(photoURL.has(id))URL.revokeObjectURL(photoURL.get(id));photoURL.delete(id);DB.del('photos',id).catch(()=>{})}
-let saveT;function save(){clearTimeout(saveT);saveT=setTimeout(()=>{DB.set('kv','state',JSON.parse(JSON.stringify(S))).catch(()=>{storageOK=false;renderBanner()})},250)}
+let saveT;function save(){if(Cloud.on){Cloud.dirty=true;clearTimeout(saveT);saveT=setTimeout(flush,400);setStatus();return}Cloud.localHad=true;clearTimeout(saveT);saveT=setTimeout(()=>{DB.set('kv','state',JSON.parse(JSON.stringify(S))).catch(()=>{storageOK=false;renderBanner()})},250)}
+
+/* ============ cloud sync (Claude artifact db + assets) ============ */
+const Cloud={on:false,col:null,assets:null,synced:new Map(),dirty:false,writing:false,again:false,lastSnap:null,status:'local',ephemeral:false,localHad:false};
+function stable(v){if(Array.isArray(v))return '['+v.map(stable).join(',')+']';if(v&&typeof v==='object')return '{'+Object.keys(v).filter(k=>v[k]!==undefined).sort().map(k=>JSON.stringify(k)+':'+stable(v[k])).join(',')+'}';return JSON.stringify(v===undefined?null:v)}
+function docsFromState(){const m=new Map();m.set('profile',{avatar:S.avatar,wear:S.wear||{},sample:!!S.sample,v:1});S.items.forEach(i=>m.set('item-'+i.id,i));S.outfits.forEach(o=>m.set('outfit-'+o.id,o));return m}
+async function retry(fn){for(let n=0;;n++){try{return await fn()}catch(e){if(e&&(e.code==='resource_exhausted'||e.code==='unavailable')&&n<5){await new Promise(r=>setTimeout(r,900*(n+1)+Math.random()*500));continue}throw e}}}
+async function flush(){
+  if(!Cloud.on)return;
+  if(Cloud.writing){Cloud.again=true;return}
+  Cloud.writing=true;Cloud.dirty=false;setStatus();
+  try{
+    if(Cloud.ephemeral){Cloud.ephemeral=false;Cloud.synced=new Map()}
+    const want=docsFromState();
+    for(const [k,v] of want){const js=stable(v);if(Cloud.synced.get(k)!==js){await retry(()=>Cloud.col.doc(k).set(JSON.parse(js)));Cloud.synced.set(k,js)}}
+    for(const k of [...Cloud.synced.keys()])if(!want.has(k)){await retry(()=>Cloud.col.doc(k).delete());Cloud.synced.delete(k)}
+    Cloud.error=null;
+  }catch(e){Cloud.error=e;toast(e&&e.code==='quota_exceeded'?'云端空间满了，删掉一些记录后再试':'同步没成功，稍后会再试');setTimeout(()=>{if(Cloud.on&&!Cloud.writing){Cloud.dirty=true;flush()}},15000)}
+  Cloud.writing=false;
+  if(Cloud.again||Cloud.dirty){Cloud.again=false;return flush()}
+  if(Cloud.lastSnap){const sn=Cloud.lastSnap;Cloud.lastSnap=null;applySnap(sn)}
+  setStatus();
+}
+function applySnap(snap){
+  if(Cloud.ephemeral){if(snap.empty)return;Cloud.ephemeral=false}
+  if(Cloud.writing||Cloud.dirty){Cloud.lastSnap=snap;return}
+  const st=freshState();const syn=new Map();
+  snap.docs.forEach(d=>{const v=d.data();if(!v)return;const js=stable(v);syn.set(d.id,js);const o=JSON.parse(js);
+    if(d.id==='profile'){st.avatar={...st.avatar,...(o.avatar||{})};st.wear=o.wear||{};st.sample=!!o.sample}
+    else if(d.id.startsWith('item-'))st.items.push(o);else if(d.id.startsWith('outfit-'))st.outfits.push(o)});
+  const sig=m=>[...m].map(([k,v])=>k+'|'+v).sort().join('\n');
+  const same=!!S&&sig(new Map([...docsFromState()].map(([k,v])=>[k,stable(v)])))===sig(syn);
+  Cloud.synced=syn;
+  if(same)return;
+  S=st;render();if(sheet&&['item','outfit','settings'].includes(sheet.type))renderSheet();
+}
+async function migrate(){
+  if(!Cloud.localHad){Cloud.ephemeral=true;return} // nothing of yours yet: show examples, save on first change
+  Cloud.dirty=true;setStatus();
+  if(Cloud.assets){for(const i of S.items){const d=photoData.get(i.id);if(d&&!i.photo){try{const r=await Cloud.assets.upload(dataURLtoBlob(d),{type:'image/jpeg'});i.photo=r.id}catch(e){}}}}
+  Cloud.synced=new Map();Cloud.dirty=false;await flush();
+  if(!Cloud.error){DB.del('kv','state').catch(()=>{});if(Cloud.assets)DB.clear('photos').catch(()=>{})}
+}
+async function connectCloud(){
+  const c=window.claude;if(!c||typeof c.use!=='function')return;
+  Cloud.status='connecting';setStatus();
+  let db,user;try{[db,user]=await Promise.all([c.use('db'),c.use('user')])}catch(e){}
+  if(!db||!user){Cloud.status='local';setStatus();return}
+  const id=await user.id();if(!id){Cloud.status='local';setStatus();return}
+  c.use('assets').then(a=>{Cloud.assets=a}).catch(()=>{});
+  const col=db.collection('data/users/'+id);
+  const timer=setTimeout(()=>{if(!Cloud.on){Cloud.status='unreachable';setStatus()}},10000);
+  col.onSnapshot(async snap=>{
+    if(!Cloud.on){
+      if(snap.empty&&snap.metadata.fromCache)return;
+      clearTimeout(timer);Cloud.assets=Cloud.assets||await c.use('assets').catch(()=>null);
+      Cloud.on=true;Cloud.col=col;Cloud.status='on';clearTimeout(saveT);
+      if(snap.empty)await migrate();else applySnap(snap);
+      render();setStatus();return;
+    }
+    applySnap(snap);
+  },err=>{clearTimeout(timer);Cloud.status=Cloud.on?'error':'unreachable';setStatus()});
+}
+function setStatus(){
+  const el=document.getElementById('sync');if(!el)return;
+  let t='',cls='';
+  if(Cloud.on){if(Cloud.writing||Cloud.dirty){t='同步中';cls='busy'}else if(Cloud.error){t='同步出错';cls='bad'}else if(Cloud.ephemeral){t='云同步已开';cls='ok'}else{t='已云同步';cls='ok'}}
+  else if(Cloud.status==='connecting'){t='连接中';cls='busy'}
+  else if(Cloud.status==='unreachable'||Cloud.status==='error'){t='云端连不上';cls='bad'}
+  else{t='仅本机';cls=''}
+  el.hidden=false;el.textContent=t;el.className='sync '+cls;el.setAttribute('aria-label','同步状态：'+t);
+}
+function photoSrc(i){return i&&i.photo?'/_blob/'+i.photo:(i&&photoURL.get(i.id))}
+function blobToDataURL(b){return new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=rej;fr.readAsDataURL(b)})}
 function freshState(){return{v:1,items:[],outfits:[],avatar:{skin:SKINS[1],hair:'long',hairColor:HAIRCOLORS[1],name:'小我'},wear:{},sample:false}}
 
 /* ============ sample data ============ */
@@ -492,7 +571,7 @@ function thumbSVG(i){
   const c=paint(i.color,[],null);const defs=[];const p=paint(i.color,defs);
   return `<svg viewBox="0 0 60 60" aria-hidden="true"><defs>${defs.join('')}</defs><circle cx="30" cy="30" r="17" fill="${p.f}" stroke="${c.s}" stroke-width="1.5"/><text x="30" y="35" text-anchor="middle" font-size="13" fill="${lum(c.f)>.6?'#333':'#fff'}">${esc((i.sub||'').slice(0,1))}</text></svg>`;
 }
-function thumbHTML(i,badge=''){const u=photoURL.get(i.id);return `<div class="thumb">${u?`<img src="${u}" alt="" loading="lazy">`:thumbSVG(i)}${badge}</div>`}
+function thumbHTML(i,badge=''){const u=photoSrc(i);return `<div class="thumb">${u?`<img src="${u}" alt="" loading="lazy">`:thumbSVG(i)}${badge}</div>`}
 function getItem(id){return S.items.find(i=>i.id===id)}
 function hairBack(h,c){
   const st=darken(c,.25);
@@ -646,7 +725,7 @@ function render(){
 }
 function renderBanner(){
   let h='';
-  if(!storageOK)h+=`<div class="banner"><p>这个浏览器现在不能保存数据（可能是无痕模式）。记录在关掉页面后会丢失，请换普通模式打开。</p></div>`;
+  if(!storageOK&&!Cloud.on)h+=`<div class="banner"><p>这个浏览器现在不能保存数据（可能是无痕模式）。记录在关掉页面后会丢失，请换普通模式打开。</p></div>`;
   if(S.sample)h+=`<div class="banner"><p>现在看到的是<b>示例数据</b>，用来演示各个功能。准备好记录你自己的东西时，一键清空就行。</p><div class="acts"><button class="btn sm primary" data-action="clear-sample">清空示例，开始记录</button><button class="btn sm" data-action="keep-sample">先看看</button></div></div>`;
   $('#banner').innerHTML=h;
 }
@@ -677,7 +756,7 @@ function newDraft(kind){const K=KIND[kind];const c=K.cats[0];return{kind,cat:c.k
 function inp(id,label,val,type='text',extra='',cls=''){return `<label class="inp ${cls}"><span class="lbl">${label}</span><input id="${id}" type="${type}" value="${esc(val)}" ${extra}></label>`}
 function sheetForm(){
   const d=sheet.draft;const K=KIND[d.kind];const cat=K.cats.find(c=>c.key===d.cat)||K.cats[0];
-  const photo=d.photoNew||(!d.photoRemoved&&d.id&&photoURL.get(d.id));
+  const photo=d.photoNew||(!d.photoRemoved&&d.id&&photoSrc(getItem(d.id)));
   let h=head((d.id?'编辑':'添加')+K.label);
   h+=`<div class="photo-pick"><label class="photo-box" for="f-photo">${photo?`<img src="${photo}" alt="">`:thumbSVG({...d,id:'_'})+'<span>拍照 / 选图</span>'}</label><input id="f-photo" type="file" accept="image/*" hidden><div class="photo-side"><span>照片可以不加。没照片时用下面选的种类和颜色画一个小图。</span>${photo?'<button class="link" data-action="f-rmphoto" style="justify-self:start">移除照片</button>':''}</div></div>`;
   h+=`<div class="field"><span class="lbl">大类</span><div class="chips">${K.cats.map(c=>`<button class="chip ${c.key===d.cat?'on':''}" data-action="f-set" data-field="cat" data-val="${c.key}">${c.label}</button>`).join('')}</div></div>`;
@@ -712,12 +791,16 @@ async function saveDraft(){
   const item={...old,id,kind:d.kind,cat:d.cat,sub:d.sub,name:d.name,brand:d.brand,price:d.price,date:d.date,note:d.note,status:d.status};
   if(d.kind==='clothes')Object.assign(item,{color:d.color,seasons:d.seasons,size:d.size,material:d.material,wearCount:old.wearCount||0});
   else Object.assign(item,{shade:d.shade,hex:d.hex,opened:d.opened,pao:d.pao,expiry:d.expiry});
+  if(d.photoNew){
+    let up=false;
+    if(Cloud.on&&Cloud.assets){if(sheet.busy)return;sheet.busy=true;toast('正在上传照片…');try{const r=await Cloud.assets.upload(dataURLtoBlob(d.photoNew),{type:'image/jpeg'});if(item.photo&&item.photo!==r.id)Cloud.assets.delete(item.photo).catch(()=>{});item.photo=r.id;up=true}catch(e){sheet.busy=false;toast('照片上传失败，先存在这台设备上')}}
+    if(!up){delete item.photo;setPhoto(id,d.photoNew);DB.set('photos',id,d.photoNew).catch(()=>{storageOK=false;renderBanner()})}
+  }else if(d.photoRemoved){if(item.photo&&Cloud.assets)Cloud.assets.delete(item.photo).catch(()=>{});delete item.photo;rmPhoto(id)}
   if(isNew){item.created=Date.now();S.items.push(item)}
-  if(d.photoNew){setPhoto(id,d.photoNew);DB.set('photos',id,d.photoNew).catch(()=>{storageOK=false;renderBanner()})}
-  else if(d.photoRemoved)rmPhoto(id);
   save();closeSheet();render();toast(isNew?'已添加「'+itemName(item)+'」':'已保存');
 }
 function deleteItem(id){
+  const it=getItem(id);if(it&&it.photo&&Cloud.assets)Cloud.assets.delete(it.photo).catch(()=>{});
   S.items=S.items.filter(i=>i.id!==id);rmPhoto(id);
   for(const k in S.wear)if(S.wear[k]===id)delete S.wear[k];
   S.outfits.forEach(o=>{for(const k in o.wear)if(o.wear[k]===id)delete o.wear[k];o.extras=(o.extras||[]).filter(x=>x!==id)});
@@ -796,7 +879,7 @@ function sheetSettings(){
   const top=cl.slice().sort((a,b)=>(b.wearCount||0)-(a.wearCount||0)).slice(0,3).filter(i=>i.wearCount>0);
   let h=head('统计与备份');
   h+=`<div class="field"><span class="lbl">衣橱统计</span><div class="stat-list">${KIND.clothes.cats.map(c=>{const n=cl.filter(i=>i.cat===c.key).length;return n?`<div><span>${c.label}</span><span class="mono">${n}</span></div>`:''}).join('')}<div><span>护肤品（未用完）</span><span class="mono">${S.items.filter(i=>i.kind==='skincare'&&!isGone(i)).length}</span></div><div><span>彩妆（未用完）</span><span class="mono">${S.items.filter(i=>i.kind==='makeup'&&!isGone(i)).length}</span></div><div><span>记录的总花费</span><span class="mono">¥${spend.toLocaleString('zh-CN',{maximumFractionDigits:0})}</span></div><div><span>一次都没穿过的衣物</span><span class="mono">${never.length}</span></div>${top.length?`<div><span>穿得最多</span><span>${top.map(i=>esc(itemName(i))+' ×'+i.wearCount).join('、')}</span></div>`:''}</div></div>`;
-  h+=`<div class="field"><span class="lbl">备份（换手机、清浏览器之前一定要做）</span><p class="hint">所有记录只存在这台设备的这个浏览器里，不会上传到任何地方。定期导出一份备份文件，换设备时再导入。</p><div class="sheet-actions" style="margin-top:4px"><button class="btn" data-action="export-file">导出备份文件</button><button class="btn" data-action="export-copy">复制备份文本</button></div><div class="sheet-actions" style="margin-top:0"><label class="btn" for="import-file">从文件导入</label><input id="import-file" type="file" accept=".json,application/json" hidden></div><textarea class="inp-area" id="import-text" placeholder="或者把备份文本粘贴到这里，再点「从文本导入」"></textarea><div class="sheet-actions" style="margin-top:0"><button class="btn" data-action="import-text">从文本导入</button></div>${sheet.pendingImport?`<div class="dup has"><p>导入会<b>替换掉</b>现在的全部记录（${S.items.length} 件单品、${S.outfits.length} 套搭配）。</p><div class="sheet-actions" style="margin-top:0"><button class="btn primary" data-action="import-confirm">确定替换</button><button class="btn ghost" data-action="import-cancel">算了</button></div></div>`:''}</div>`;
+  h+=`<div class="field"><span class="lbl">备份（换手机、清浏览器之前一定要做）</span><p class="hint">${Cloud.on?'记录和照片保存在你的 Claude 账号里，只有你自己能看到。手机和电脑登录同一个账号、打开同一个链接，就会自动同步。备份文件是多一份保险。':'现在记录只存在这台设备的这个浏览器里。定期导出一份备份文件，换设备时再导入。'}</p><div class="sheet-actions" style="margin-top:4px"><button class="btn" data-action="export-file">导出备份文件</button><button class="btn" data-action="export-copy">复制备份文本</button></div><div class="sheet-actions" style="margin-top:0"><label class="btn" for="import-file">从文件导入</label><input id="import-file" type="file" accept=".json,application/json" hidden></div><textarea class="inp-area" id="import-text" placeholder="或者把备份文本粘贴到这里，再点「从文本导入」"></textarea><div class="sheet-actions" style="margin-top:0"><button class="btn" data-action="import-text">从文本导入</button></div>${sheet.pendingImport?`<div class="dup has"><p>导入会<b>替换掉</b>现在的全部记录（${S.items.length} 件单品、${S.outfits.length} 套搭配）。</p><div class="sheet-actions" style="margin-top:0"><button class="btn primary" data-action="import-confirm">确定替换</button><button class="btn ghost" data-action="import-cancel">算了</button></div></div>`:''}</div>`;
   h+=`<div class="field"><span class="lbl">危险操作</span><div class="sheet-actions" style="margin-top:0"><button class="btn danger ${sheet.armed?'armed':''}" data-action="wipe">${sheet.armed?'真的全部清空？点这里确认':'清空所有记录'}</button></div></div>`;
   return h;
 }
@@ -823,14 +906,20 @@ function randomOutfit(){
   if(!Object.keys(w).length){toast(`${seasonName(se)}季还没有能穿的衣服`);return}
   S.wear=w;save();render();toast(`随机搭了一套${seasonName(se)}季的`);
 }
-function exportData(){return JSON.stringify({app:'wardrobe-journal',version:1,exportedAt:new Date().toISOString(),state:S,photos:Object.fromEntries(photoData)})}
+async function exportData(){
+  const photos={};
+  for(const i of S.items){if(photoData.has(i.id))photos[i.id]=photoData.get(i.id);else if(i.photo){try{const r=await fetch('/_blob/'+i.photo);if(r.ok)photos[i.id]=await blobToDataURL(await r.blob())}catch(e){}}}
+  return JSON.stringify({app:'wardrobe-journal',version:2,exportedAt:new Date().toISOString(),state:S,photos});
+}
 function parseImport(txt){const o=JSON.parse(txt);if(!o||o.app!=='wardrobe-journal'||!o.state||!Array.isArray(o.state.items))throw new Error('bad');return o}
 async function applyImport(o){
-  S={...freshState(),...o.state};S.sample=false;
+  const st={...freshState(),...o.state};st.sample=false;
   for(const id of [...photoURL.keys()])rmPhoto(id);
   await DB.clear('photos').catch(()=>{});
-  for(const [id,d] of Object.entries(o.photos||{})){setPhoto(id,d);await DB.set('photos',id,d).catch(()=>{})}
-  save();
+  for(const [id,d] of Object.entries(o.photos||{})){const it=st.items.find(i=>i.id===id);if(!it)continue;
+    if(Cloud.on&&Cloud.assets){try{const r=await Cloud.assets.upload(dataURLtoBlob(d),{type:'image/jpeg'});it.photo=r.id;continue}catch(e){}}
+    delete it.photo;setPhoto(id,d);await DB.set('photos',id,d).catch(()=>{})}
+  S=st;save();
 }
 async function onClick(e){
   const el=e.target.closest('[data-action]');if(!el)return;
@@ -891,12 +980,15 @@ async function onClick(e){
     case 'c-sub':ui.check.sub=val;renderSheet();break;
     case 'c-color':ui.check.color=ui.check.color===val?'':val;renderSheet();break;
     case 'settings':openSheet({type:'settings'});break;
-    case 'export-file':{try{const b=new Blob([exportData()],{type:'application/json'});const u=URL.createObjectURL(b);const l=document.createElement('a');l.href=u;l.download='衣橱手账备份-'+todayStr()+'.json';document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);toast('备份文件已生成；如果没开始下载，请用「复制备份文本」')}catch(err){toast('这里不能下载文件，请用「复制备份文本」')}break}
-    case 'export-copy':{const t=exportData();try{await navigator.clipboard.writeText(t);toast('备份文本已复制，粘贴到备忘录里存好')}catch(err){const ta=document.getElementById('import-text');ta.value=t;ta.select();toast('已放进下面的文本框并选中，请手动复制')}break}
+    case 'export-file':{toast('正在打包备份…');const txt=await exportData();const fn='衣橱手账备份-'+todayStr()+'.json';
+      const dl=window.claude&&window.claude.use?await window.claude.use('downloads').catch(()=>null):null;
+      if(dl){try{await dl.save({filename:fn,data:txt});toast('备份已保存')}catch(err){toast(err&&err.code==='declined'?'没有保存':'这里存不了文件，请用「复制备份文本」')}break}
+      try{const b=new Blob([txt],{type:'application/json'});const u=URL.createObjectURL(b);const l=document.createElement('a');l.href=u;l.download=fn;document.body.appendChild(l);l.click();l.remove();setTimeout(()=>URL.revokeObjectURL(u),4000);toast('备份文件已生成；如果没开始下载，请用「复制备份文本」')}catch(err){toast('这里不能下载文件，请用「复制备份文本」')}break}
+    case 'export-copy':{const t=await exportData();try{await navigator.clipboard.writeText(t);toast('备份文本已复制，粘贴到备忘录里存好')}catch(err){const ta=document.getElementById('import-text');ta.value=t;ta.select();toast('已放进下面的文本框并选中，请手动复制')}break}
     case 'import-text':{const t=document.getElementById('import-text').value.trim();try{sheet.pendingImport=parseImport(t);renderSheet()}catch(err){toast('这段文本不是衣橱手账的备份')}break}
     case 'import-confirm':await applyImport(sheet.pendingImport);sheet.pendingImport=null;closeSheet();render();toast('导入完成');break;
     case 'import-cancel':sheet.pendingImport=null;renderSheet();break;
-    case 'wipe':if(!sheet.armed){sheet.armed=true;renderSheet();break}for(const pid of [...photoURL.keys()])rmPhoto(pid);await DB.clear('photos').catch(()=>{});{const av=S.avatar;S=freshState();S.avatar=av}save();closeSheet();render();toast('已全部清空');break;
+    case 'wipe':if(!sheet.armed){sheet.armed=true;renderSheet();break}if(Cloud.assets)S.items.forEach(i=>{if(i.photo)Cloud.assets.delete(i.photo).catch(()=>{})});for(const pid of [...photoURL.keys()])rmPhoto(pid);await DB.clear('photos').catch(()=>{});{const av=S.avatar;S=freshState();S.avatar=av}save();closeSheet();render();toast('已全部清空');break;
     case 'clear-sample':{const ids=S.items.filter(i=>i.sample).map(i=>i.id);ids.forEach(rmPhoto);S.items=S.items.filter(i=>!i.sample);S.outfits=S.outfits.filter(o=>!o.sample);S.wear={};S.sample=false;save();render();toast('示例已清空，点「添加衣服」开始吧');break}
     case 'keep-sample':S.sample=false;save();renderBanner();toast('示例保留着，随时可以在单品里删除');break;
   }
@@ -917,10 +1009,10 @@ window.addEventListener('hashchange',()=>{const t=location.hash.slice(1);if(['cl
 (async function boot(){
   let st=null;
   try{await DB.open();st=await DB.get('kv','state');const ph=await DB.all('photos');ph.forEach(([k,v])=>setPhoto(k,v))}catch(e){storageOK=false}
-  S=st&&Array.isArray(st.items)?{...freshState(),...st}:sampleState();
-  if(!st)save();
+  Cloud.localHad=!!(st&&Array.isArray(st.items));
+  S=Cloud.localHad?{...freshState(),...st}:sampleState();
   const t=location.hash.slice(1);if(['clothes','skincare','makeup','outfits','dressup'].includes(t))ui.tab=t;
-  render();
+  render();setStatus();connectCloud();
   try{if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol)&&document.querySelector('link[rel=manifest]'))navigator.serviceWorker.register('sw.js').catch(()=>{})}catch(e){}
 })();
 </script>
