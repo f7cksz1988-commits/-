@@ -15,10 +15,11 @@
 <style>:root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}*{box-sizing:border-box}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style><!--R-->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;700&family=DM+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;700&family=ZCOOL+KuaiLe&family=DM+Mono:wght@400;500&display=swap">
 <style>
 /* Layout: one-column phone app — sticky header, scrolling content, fixed bottom tab bar; widens to a centred 980px column on desktop. */
 :root{
+  --mascot-bg:transparent;
   --bg:#F5FAEE; --surface:#FFFFFF; --tile:#E9F3DC; --ink:#24361A; --muted:#6A7B5E; --line:#D8E8C5;
   --accent:#95CF55; --accent-ink:#18300A; --accent-soft:#E5F4D0; --accent-text:#4A8A1C;
   --teal:#2F7471; --teal-soft:#DCEFEC; --warn:#A9501C; --warn-soft:#FBE8DA; --ok:#2F7A2E; --ok-soft:#E0F2D8;
@@ -29,11 +30,13 @@
   --r:14px;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --mascot-bg:#E4ECD8;
   --bg:#141A10; --surface:#1C2416; --tile:#26311E; --ink:#E9F2DF; --muted:#A2B293; --line:#314027;
   --accent:#8FCC4F; --accent-ink:#15260A; --accent-soft:#25381A; --accent-text:#A8DB70;
   --teal:#83C6C3; --teal-soft:#1D3433; --warn:#F2A473; --warn-soft:#3B2619; --ok:#86CFA2; --ok-soft:#1D3326;
   --board:#19210F; --board-dot:#2A3720; --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 20px rgba(0,0,0,.25); color-scheme:dark}}
 :root[data-theme="dark"]{
+  --mascot-bg:#E4ECD8;
   --bg:#141A10; --surface:#1C2416; --tile:#26311E; --ink:#E9F2DF; --muted:#A2B293; --line:#314027;
   --accent:#8FCC4F; --accent-ink:#15260A; --accent-soft:#25381A; --accent-text:#A8DB70;
   --teal:#83C6C3; --teal-soft:#1D3433; --warn:#F2A473; --warn-soft:#3B2619; --ok:#86CFA2; --ok-soft:#1D3326;
@@ -190,6 +193,19 @@ main{padding-block:4px 120px}
 .imp-line{display:flex;gap:6px;align-items:center;min-width:0}
 .imp-line .newsub{flex:1 1 0;width:0;min-width:0}
 .imp-fields select.newsub{padding:0 6px}
+.mascot{display:flex;gap:10px;align-items:center;margin:2px 0 14px}
+.mascot-tap{background:none;border:0;padding:0;flex:none}
+.mascot-art{width:84px;height:auto;display:block;background:var(--mascot-bg);border-radius:22px}
+.mascot.small{margin:0 0 8px}
+.mascot.small .mascot-art{width:64px;flex:none}
+.bubble{position:relative;flex:1;min-width:0;background:var(--surface);border:2px solid var(--ink);border-radius:255px 18px 225px 18px/18px 225px 18px 255px;padding:10px 14px;font-family:"ZCOOL KuaiLe",var(--f-body);font-size:15.5px;line-height:1.5}
+.bubble::before{content:"";position:absolute;left:-9px;top:50%;width:14px;height:14px;background:var(--surface);border-left:2px solid var(--ink);border-bottom:2px solid var(--ink);transform:translateY(-50%) rotate(45deg);border-radius:0 0 0 4px}
+.bubble p{margin:0}
+.bubble-acts{display:flex;gap:14px;margin-top:4px;font-family:var(--f-body)}
+.bubble-acts .link{font-size:12px;color:var(--muted)}
+.mascot-art.wiggle{animation:wig .5s ease}
+@keyframes wig{0%,100%{transform:rotate(0)}25%{transform:rotate(-8deg)}60%{transform:rotate(6deg)}}
+@media (prefers-reduced-motion:reduce){.mascot-art.wiggle{animation:none}}
 .frame{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
 .frame .thumb{width:150px;flex:none;cursor:grab;touch-action:none;border:1px dashed var(--muted)}
 .frame-side{display:grid;gap:8px;flex:1 1 160px;min-width:0}
@@ -330,6 +346,7 @@ main{padding-block:4px 120px}
   <div class="cut-row"><span class="lbl">看效果</span><div class="seg" id="cutBg"><button data-action="cut-bg" data-val="check">格子</button><button data-action="cut-bg" data-val="white">白</button><button data-action="cut-bg" data-val="green">绿</button><button data-action="cut-bg" data-val="dark">黑</button></div></div>
   <div class="sheet-actions"><button class="btn primary" data-action="cut-done">用抠好的图</button><button class="btn ghost" data-action="cut-cancel">不用了</button></div>
 </div></div>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs><filter id="crayon" x="-6%" y="-6%" width="112%" height="112%"><feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="2" seed="4" result="n"/><feDisplacementMap in="SourceGraphic" in2="n" scale="2.4" xChannelSelector="R" yChannelSelector="G" result="d"/><feTurbulence type="fractalNoise" baseFrequency="1.9" numOctaves="1" seed="9" result="g"/><feColorMatrix in="g" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 -1.1 1.3" result="ga"/><feComposite in="d" in2="ga" operator="in"/></filter></defs></svg>
 <div class="toast" id="toast" role="status"></div>
 
 <script>
@@ -701,6 +718,7 @@ function viewClothes(){
   const cs=curSeason();const nowWear=all.filter(i=>!isGone(i)&&(i.seasons||[]).includes(cs)).length;
   const idle=all.filter(i=>i.status==='闲置').length;
   let h=`<div class="summary"><div><b>${all.filter(i=>!isGone(i)).length}</b><span>件衣物</span></div><div><b>${nowWear}</b><span>${seasonName(cs)}天能穿</span></div><div><b>${idle}</b><span>件闲置</span></div><div><b>${S.outfits.length}</b><span>套搭配</span></div></div>`;
+  h+=mascotCard();
   if(Cloud.sample)h+=`<button class="btn soft" data-action="import" style="width:100%;margin-bottom:12px">从淘宝 / 闲鱼 / 优衣库订单截图导入</button>`;
   h+=`<div class="filters"><div class="chips scroll">${chip('全部季节',ui.season==='all','season','all')}${SEASONS.map(([k,l])=>chip(l+'季',ui.season===k,'season',k,live.filter(i=>(i.seasons||[]).includes(k)).length)).join('')}</div>`;
   h+=`<div class="chips scroll">${chip('全部',ui.cat==='all','cat','all',bySeason.length)}${cats.map(c=>{const n=bySeason.filter(i=>i.cat===c.key).length;return chip(c.label,ui.cat===c.key,'cat',c.key,n)}).join('')}</div>`;
@@ -807,10 +825,11 @@ function similar(d){
 }
 function dupHTML(d,mode){
   const sim=similar(d);const what=d.sub||catOf(d).label;
-  if(!sim.length)return mode==='check'?`<div class="dup none"><p><b>你还没有「${esc(what)}」${d.color&&COLOR[d.color]?'（'+COLOR[d.color].name+'）':''}</b>，不会重复。</p></div>`:'';
+  if(!sim.length)return mode==='check'?`<div class="dup none"><p><b>你还没有「${esc(what)}」${d.color&&COLOR[d.color]?'（'+COLOR[d.color].name+'）':''}</b>，不会重复。</p></div>${mascotInline('panda','没有重复。不过……真的会经常穿吗？想好了再买，存钱罐在看着你')}`:'';
   const same=sim.filter(x=>x.same).length;
   const colorTxt=d.kind==='clothes'&&d.color&&COLOR[d.color]?COLOR[d.color].name:d.shade?('色号 '+d.shade):'';
-  return `<div class="dup has"><p><b>你已经有 ${sim.length} ${KIND[d.kind].unit}「${esc(what)}」了</b>${same?`，其中 <b>${same} ${KIND[d.kind].unit}也是${esc(colorTxt)}</b>`:''}。${mode==='check'?'':'确定还要再添一件吗？'}</p><div class="mini">${sim.slice(0,12).map(({i})=>`<button data-action="open-item" data-id="${i.id}" title="${esc(itemName(i))}">${thumbHTML(i)}</button>`).join('')}</div></div>`;
+  const bark=same?`汪汪！同样颜色的都有 ${same} ${KIND[d.kind].unit}了，放下它，存钱！`:`汪！家里已经有 ${sim.length} ${KIND[d.kind].unit}同类了，再想想？`;
+  return mascotInline('collie',bark)+`<div class="dup has"><p><b>你已经有 ${sim.length} ${KIND[d.kind].unit}「${esc(what)}」了</b>${same?`，其中 <b>${same} ${KIND[d.kind].unit}也是${esc(colorTxt)}</b>`:''}。${mode==='check'?'':'确定还要再添一件吗？'}</p><div class="mini">${sim.slice(0,12).map(({i})=>`<button data-action="open-item" data-id="${i.id}" title="${esc(itemName(i))}">${thumbHTML(i)}</button>`).join('')}</div></div>`;
 }
 function newDraft(kind){const K=KIND[kind];const c=K.cats[0];return{kind,cat:c.key,sub:subsOf(kind,c.key)[0]||'',color:kind==='clothes'?'':'',seasons:kind==='clothes'?[]:undefined,status:K.status[0],name:'',brand:'',price:'',date:todayStr(),size:'',material:'',shade:'',hex:'',opened:'',pao:'',expiry:'',note:'',photoNew:null,photoRemoved:false,cutNew:null,cutRemoved:false}}
 function inp(id,label,val,type='text',extra='',cls=''){return `<label class="inp ${cls}"><span class="lbl">${label}</span><input id="${id}" type="${type}" value="${esc(val)}" ${extra}></label>`}
@@ -1042,6 +1061,8 @@ async function onClick(e){
     case 'imp-back':sheet.stage='review';renderSheet(true);break;
     case 'imp-toggle':syncImport();{const r=sheet.rows[+val];r.on=!r.on;if(r.on&&r.kind==='other')r.on=false}renderSheet();break;
     case 'imp-save':saveImport();break;
+    case 'mascot-next':mascotN++;{const t=document.querySelector('.mascot:not(.small)');render();const n=document.querySelector('.mascot:not(.small) .mascot-art');if(n){n.classList.remove('wiggle');void n.offsetWidth;n.classList.add('wiggle')}}break;
+    case 'mascot-hide':try{localStorage.setItem('mascotHide',todayStr())}catch(e){}render();toast('今天不打扰你了，明天见');break;
     case 'f-frame-reset':syncDraft();sheet.draft.view=null;renderSheet();break;
     case 'f-uncut':syncDraft();sheet.draft.cutNew=null;sheet.draft.cutRemoved=true;renderSheet();break;
     case 'bslot':ui.bslot=val;render();break;
@@ -1130,6 +1151,53 @@ document.addEventListener('pointermove',e=>{
 });
 function endDrag(){if(!drag)return;const m=drag.moved;drag=null;if(m)save()}
 document.addEventListener('pointerup',endDrag);document.addEventListener('pointercancel',endDrag);
+
+/* ============ crayon mascots: a panda with a piggy bank and a border collie ============ */
+const INK='#2a2622';
+function pandaSVG(cls=''){return `<svg class="mascot-art ${cls}" viewBox="0 0 120 124" aria-hidden="true"><g filter="url(#crayon)" stroke="${INK}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+<ellipse cx="60" cy="118" rx="34" ry="4" fill="rgba(60,80,40,.18)" stroke="none"/>
+<ellipse cx="43" cy="108" rx="11" ry="8" fill="${INK}"/><ellipse cx="77" cy="108" rx="11" ry="8" fill="${INK}"/>
+<ellipse cx="60" cy="90" rx="30" ry="23" fill="#fffdf7"/>
+<ellipse cx="60" cy="93" rx="17" ry="13" fill="#F6B3C6"/><path d="M53 85h10" stroke-width="2.4"/><circle cx="74" cy="94" r="4" fill="#F29BB3" stroke-width="2"/><circle cx="73" cy="93.5" r=".8" fill="${INK}" stroke="none"/><circle cx="75.2" cy="93.5" r=".8" fill="${INK}" stroke="none"/><path d="M49 82l3-5 4 4" fill="#F6B3C6" stroke-width="2"/>
+<circle cx="58" cy="71" r="6.5" fill="#F5D05A" stroke-width="2.4"/><path d="M56 68.5l2 2.5 2-2.5M58 71v4M55.5 73h5" stroke-width="1.6" fill="none"/>
+<ellipse cx="38" cy="90" rx="8" ry="11" fill="${INK}" transform="rotate(-25 38 90)"/><ellipse cx="82" cy="90" rx="8" ry="11" fill="${INK}" transform="rotate(25 82 90)"/>
+<circle cx="35" cy="24" r="10" fill="${INK}"/><circle cx="85" cy="24" r="10" fill="${INK}"/>
+<ellipse cx="60" cy="47" rx="33" ry="27" fill="#fffdf7"/>
+<ellipse cx="46" cy="47" rx="8" ry="10.5" fill="${INK}" transform="rotate(-28 46 47)"/><ellipse cx="74" cy="47" rx="8" ry="10.5" fill="${INK}" transform="rotate(28 74 47)"/>
+<circle cx="47" cy="46" r="3.6" fill="#fff" stroke="none"/><circle cx="73" cy="46" r="3.6" fill="#fff" stroke="none"/><circle cx="47.6" cy="46.6" r="2" fill="${INK}" stroke="none"/><circle cx="72.4" cy="46.6" r="2" fill="${INK}" stroke="none"/>
+<ellipse cx="60" cy="57" rx="4.2" ry="3" fill="${INK}"/><path d="M55.5 61.5q4.5 4 9 0" fill="none" stroke-width="2.4"/>
+<ellipse cx="38" cy="59" rx="5.5" ry="3.2" fill="#F4A3B4" stroke="none" opacity=".8"/><ellipse cx="82" cy="59" rx="5.5" ry="3.2" fill="#F4A3B4" stroke="none" opacity=".8"/>
+</g></svg>`}
+function collieSVG(cls=''){return `<svg class="mascot-art ${cls}" viewBox="0 0 120 124" aria-hidden="true"><g filter="url(#crayon)" stroke="${INK}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+<ellipse cx="60" cy="118" rx="34" ry="4" fill="rgba(60,80,40,.18)" stroke="none"/>
+<path d="M86 100q22-6 20-30q-2 10-12 14" fill="${INK}"/><path d="M104 76q1-5-1-8q-4 5-3 9z" fill="#fffdf7" stroke-width="2"/>
+<ellipse cx="60" cy="94" rx="27" ry="21" fill="${INK}"/>
+<path d="M46 80q14 10 28 0q2 18-14 28q-16-10-14-28z" fill="#fffdf7"/>
+<ellipse cx="49" cy="111" rx="9" ry="6.5" fill="#fffdf7"/><ellipse cx="71" cy="111" rx="9" ry="6.5" fill="#fffdf7"/><path d="M47 113v-3M51 113v-3M69 113v-3M73 113v-3" stroke-width="1.6"/>
+<path d="M33 40L27 13Q38 15 47 27z" fill="${INK}"/><path d="M87 40L93 13Q82 15 73 27z" fill="${INK}"/><path d="M30 18q6-1 9 5" stroke="#fffdf7" stroke-width="2" fill="none"/><path d="M90 18q-6-1-9 5" stroke="#fffdf7" stroke-width="2" fill="none"/>
+<ellipse cx="60" cy="50" rx="31" ry="27" fill="${INK}"/>
+<path d="M56 25q4-3 8 0l2 18q12 5 12 17q-6 14-18 14q-12 0-18-14q0-12 12-17z" fill="#fffdf7"/>
+<circle cx="46" cy="47" r="5.4" fill="#fff" stroke-width="2"/><circle cx="74" cy="47" r="5.4" fill="#fff" stroke-width="2"/><circle cx="46.6" cy="47.8" r="3.2" fill="#6B4528" stroke="none"/><circle cx="73.4" cy="47.8" r="3.2" fill="#6B4528" stroke="none"/><circle cx="47.6" cy="46.4" r="1.1" fill="#fff" stroke="none"/><circle cx="74.4" cy="46.4" r="1.1" fill="#fff" stroke="none"/>
+<ellipse cx="60" cy="59" rx="5" ry="3.6" fill="${INK}"/><path d="M53 64q7 5 14 0" fill="none" stroke-width="2.4"/><path d="M57 66.5q3 7 6 0" fill="#F28FA5" stroke-width="2"/>
+<ellipse cx="43" cy="60" rx="5" ry="3" fill="#F4A3B4" stroke="none" opacity=".75"/><ellipse cx="77" cy="60" rx="5" ry="3" fill="#F4A3B4" stroke="none" opacity=".75"/>
+</g></svg>`}
+let mascotN=Math.floor(Math.random()*100);
+function monthStats(){const ym=todayStr().slice(0,7);const m=S.items.filter(i=>(i.date||'').startsWith(ym));return{n:m.length,cny:m.filter(i=>i.cur!=='JPY').reduce((s,i)=>s+(parseFloat(i.price)||0),0),jpy:m.filter(i=>i.cur==='JPY').reduce((s,i)=>s+(parseFloat(i.price)||0),0)}}
+function mascotLines(){
+  const st=monthStats(),cl=S.items.filter(i=>i.kind==='clothes'&&!isGone(i)),never=cl.filter(i=>!(i.wearCount>0)).length,L=[];
+  if(st.n){const money=[st.cny?'¥'+Math.round(st.cny).toLocaleString('zh-CN'):'',st.jpy?Math.round(st.jpy).toLocaleString('zh-CN')+' 日元':''].filter(Boolean).join(' + ');L.push(['panda',`这个月已经买了 ${st.n} 件${money?'，花了 '+money:''}……说好的存钱呢？`])}
+  else L.push(['panda','这个月还没有乱买东西，好棒！继续保持～']);
+  if(never)L.push(['collie',`汪！衣柜里还有 ${never} 件一次都没穿过，先把它们穿起来嘛`]);
+  if(cl.length>=10)L.push(['collie',`你已经有 ${cl.length} 件衣服啦，汪。真的还缺吗？`]);
+  L.push(['panda','说好的存钱呢？'],['panda','看上的东西先放购物车，三天后还想要再买～'],['collie','汪！想买新衣服之前，先去「拼搭」用旧衣服搭一套试试'],['panda','省下来的钱，可以去吃一顿好吃的！'],['collie','汪汪，买之前点一下「买前查一查」，我帮你看着'],['panda','不买的话，这个钱就是存下来的钱哦']);
+  return L;
+}
+function mascotHidden(){try{return localStorage.getItem('mascotHide')===todayStr()}catch(e){return false}}
+function mascotCard(){
+  if(mascotHidden())return '';const L=mascotLines();const [who,msg]=L[mascotN%L.length];
+  return `<div class="mascot"><button class="mascot-tap" data-action="mascot-next" aria-label="换一句">${who==='panda'?pandaSVG():collieSVG()}</button><div class="bubble"><p>${esc(msg)}</p><div class="bubble-acts"><button class="link" data-action="mascot-next">换一句</button><button class="link" data-action="mascot-hide">今天先不看</button></div></div></div>`;
+}
+function mascotInline(who,msg){return `<div class="mascot small">${who==='panda'?pandaSVG():collieSVG()}<div class="bubble"><p>${msg}</p></div></div>`}
 
 /* ============ import from order screenshots (Claude reads them) ============ */
 let impCtl=null;
