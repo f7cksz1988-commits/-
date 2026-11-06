@@ -166,6 +166,20 @@ main{padding-block:4px 120px}
 .zoomwrap{display:grid;gap:6px;min-width:0}
 .zoomwrap .thumb{touch-action:none;cursor:grab}
 .zoomctl{display:flex;gap:8px;align-items:center}
+.newsub{flex:1 1 140px;min-width:0;height:36px;border:1px solid var(--line);background:var(--surface);border-radius:10px;padding:0 10px;outline:none}
+.newsub:focus{border-color:var(--accent-text)}
+.subrow{display:flex;gap:6px;align-items:center}
+.subrow{min-width:0}
+.subrow .newsub{flex:1 1 0;width:0}
+.subrow .btn{flex:none}
+.subrow .n{font:500 12px var(--f-mono);color:var(--muted);width:40px;text-align:right;flex:none}
+.stat-list details{border-bottom:1px dashed var(--line)}
+.stat-list summary{display:flex;justify-content:space-between;gap:10px;padding-block:8px;cursor:pointer;list-style:none}
+.stat-list summary::-webkit-details-marker{display:none}
+.stat-list summary::after{content:"›";color:var(--muted);transition:transform .15s}
+.stat-list details[open] summary::after{transform:rotate(90deg)}
+.stat-list summary span:first-child{flex:1}
+.stat-sub{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 10px}
 .frame{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
 .frame .thumb{width:150px;flex:none;cursor:grab;touch-action:none;border:1px dashed var(--muted)}
 .frame-side{display:grid;gap:8px;flex:1 1 160px;min-width:0}
@@ -190,7 +204,7 @@ main{padding-block:4px 120px}
 
 /* sheet */
 .sheet-wrap{position:fixed;inset:0;z-index:40;background:rgba(20,16,24,.45);display:flex;align-items:flex-end;justify-content:center}
-.sheet{background:var(--bg);width:100%;max-width:640px;max-height:calc(100% - env(safe-area-inset-top,0px) - 24px);overflow-y:auto;border-radius:22px 22px 0 0;padding:6px max(16px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 18px) max(16px,env(safe-area-inset-left,0px));animation:up .22s ease-out;overscroll-behavior:contain}
+.sheet{background:var(--bg);width:100%;max-width:640px;max-height:calc(100% - env(safe-area-inset-top,0px) - 24px);overflow-y:auto;border-radius:22px 22px 0 0;padding:6px max(16px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 18px) max(16px,env(safe-area-inset-left,0px));animation:up .22s ease-out;overscroll-behavior:contain;overflow-x:hidden}
 @media (min-width:700px){.sheet-wrap{align-items:center}.sheet{border-radius:22px;max-height:90%;padding-bottom:20px}}
 @keyframes up{from{transform:translateY(24px);opacity:.6}to{transform:none;opacity:1}}
 @media (prefers-reduced-motion:reduce){.sheet{animation:none}}
@@ -358,6 +372,9 @@ const seasonName=k=>(SEASONS.find(s=>s[0]===k)||[])[1]||'';
 function darken(hex,a){if(!hex||hex[0]!=='#')return '#6c6470';let n=parseInt(hex.slice(1),16),r=n>>16,g=n>>8&255,b=n&255;const f=x=>Math.max(0,Math.round(x*(1-a)));return '#'+((1<<24)+(f(r)<<16)+(f(g)<<8)+f(b)).toString(16).slice(1)}
 function lum(hex){if(!hex||hex[0]!=='#')return .5;const n=parseInt(hex.slice(1),16);return((n>>16)*.299+(n>>8&255)*.587+(n&255)*.114)/255}
 function catOf(i){return (KIND[i.kind].cats.find(c=>c.key===i.cat))||{label:'',subs:[]}}
+function subsOf(kind,cat){const c=S&&S.custom&&S.custom[kind]&&S.custom[kind][cat];if(Array.isArray(c))return c;const k=KIND[kind].cats.find(x=>x.key===cat);return k?k.subs:[]}
+function setSubs(kind,cat,list){S.custom=S.custom||{};S.custom[kind]=S.custom[kind]||{};S.custom[kind][cat]=list;save()}
+function subsWithUsed(kind,cat){const l=[...subsOf(kind,cat)];S.items.forEach(i=>{if(i.kind===kind&&i.cat===cat&&i.sub&&!l.includes(i.sub))l.push(i.sub)});return l}
 function itemName(i){if(i.name)return i.name;const c=i.kind==='clothes'&&COLOR[i.color]?COLOR[i.color].name:'';return c+(i.sub||catOf(i).label)}
 function isGone(i){return i.status===KIND[i.kind].gone}
 function toast(msg){const t=$('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>t.classList.remove('show'),2000)}
@@ -381,7 +398,7 @@ let saveT;function save(){if(Cloud.on){Cloud.dirty=true;clearTimeout(saveT);save
 /* ============ cloud sync (Claude artifact db + assets) ============ */
 const Cloud={on:false,col:null,assets:null,synced:new Map(),dirty:false,writing:false,again:false,lastSnap:null,status:'local',ephemeral:false,localHad:false};
 function stable(v){if(Array.isArray(v))return '['+v.map(stable).join(',')+']';if(v&&typeof v==='object')return '{'+Object.keys(v).filter(k=>v[k]!==undefined).sort().map(k=>JSON.stringify(k)+':'+stable(v[k])).join(',')+'}';return JSON.stringify(v===undefined?null:v)}
-function docsFromState(){const m=new Map();m.set('profile',{board:S.board||{pieces:[]},sample:!!S.sample,v:2});S.items.forEach(i=>m.set('item-'+i.id,i));S.outfits.forEach(o=>m.set('outfit-'+o.id,o));return m}
+function docsFromState(){const m=new Map();m.set('profile',{board:S.board||{pieces:[]},custom:S.custom||{},sample:!!S.sample,v:2});S.items.forEach(i=>m.set('item-'+i.id,i));S.outfits.forEach(o=>m.set('outfit-'+o.id,o));return m}
 async function retry(fn){for(let n=0;;n++){try{return await fn()}catch(e){if(e&&(e.code==='resource_exhausted'||e.code==='unavailable')&&n<5){await new Promise(r=>setTimeout(r,900*(n+1)+Math.random()*500));continue}throw e}}}
 async function flush(){
   if(!Cloud.on)return;
@@ -404,13 +421,13 @@ function applySnap(snap){
   if(Cloud.writing||Cloud.dirty){Cloud.lastSnap=snap;return}
   const st=freshState();const syn=new Map();
   snap.docs.forEach(d=>{const v=d.data();if(!v)return;const js=stable(v);syn.set(d.id,js);const o=JSON.parse(js);
-    if(d.id==='profile'){st.board=o.board||null;st.wear=o.wear;st.sample=!!o.sample}
+    if(d.id==='profile'){st.board=o.board||null;st.wear=o.wear;st.custom=o.custom||{};st.sample=!!o.sample}
     else if(d.id.startsWith('item-'))st.items.push(o);else if(d.id.startsWith('outfit-'))st.outfits.push(o)});
   const sig=m=>[...m].map(([k,v])=>k+'|'+v).sort().join('\n');
   const same=!!S&&sig(new Map([...docsFromState()].map(([k,v])=>[k,stable(v)])))===sig(syn);
   Cloud.synced=syn;
   if(same)return;
-  S=normalizeState(st);render();if(sheet&&['item','outfit','settings'].includes(sheet.type))renderSheet();
+  S=normalizeState(st);if(purgeSamples(S))save();render();if(sheet&&['item','outfit','settings','subs'].includes(sheet.type))renderSheet();
 }
 async function migrate(){
   if(!Cloud.localHad){Cloud.ephemeral=true;return} // nothing of yours yet: show examples, save on first change
@@ -459,64 +476,23 @@ async function storeImage(item,which,dataURL){
 }
 function dropImage(item,which){const key=which==='cut'?'cut':'photo',lk=which==='cut'?item.id+'_cut':item.id;if(item[key]&&Cloud.assets)Cloud.assets.delete(item[key]).catch(()=>{});delete item[key];rmPhoto(lk)}
 function blobToDataURL(b){return new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=rej;fr.readAsDataURL(b)})}
-function freshState(){return{v:2,items:[],outfits:[],board:{pieces:[]},sample:false}}
+function freshState(){return{v:2,items:[],outfits:[],board:{pieces:[]},custom:{},sample:false}}
 function boardSlot(i){if(!i)return 'acc';if(i.kind!=='clothes')return 'beauty';return {top:'top',outer:'outer',pants:'bottom',skirt:'bottom',dress:'dress',shoes:'shoes',bag:'bag',acc:'acc',inner:'inner'}[i.cat]||'acc'}
 function layoutAdd(pieces,item,items){const sl=boardSlot(item);const L=LAYOUT[sl]||LAYOUT.acc;const n=pieces.filter(p=>boardSlot(items.find(i=>i.id===p.id))===sl).length;const z=pieces.reduce((m,p)=>Math.max(m,p.z||0),0)+1;const p={id:item.id,x:L.x+n*6,y:L.y+n*5,w:L.w,z};pieces.push(p);return p}
 function piecesFromIds(ids,items){const pcs=[];ids.forEach(id=>{const it=items.find(i=>i.id===id);if(it&&!pcs.some(p=>p.id===id))layoutAdd(pcs,it,items)});return pcs}
+function purgeSamples(st){
+  let ch=false;const gone=new Set();
+  st.items=st.items.filter(i=>{if(!i.sample)return true;ch=true;if(i.photo||i.cut||photoData.has(i.id)){delete i.sample;return true}gone.add(i.id);return false});
+  st.outfits=st.outfits.filter(o=>{if(!o.sample)return true;ch=true;o.pieces=(o.pieces||[]).filter(p=>!gone.has(p.id));if(o.pieces.length){delete o.sample;return true}return false});
+  st.outfits.forEach(o=>{o.pieces=(o.pieces||[]).filter(p=>!gone.has(p.id))});
+  if(st.board)st.board.pieces=st.board.pieces.filter(p=>!gone.has(p.id));
+  if(st.sample){st.sample=false;ch=true}return ch;
+}
 function normalizeState(st){
   st.items=st.items||[];st.outfits=st.outfits||[];
   if(!st.board||!Array.isArray(st.board.pieces))st.board={pieces:piecesFromIds(Object.values(st.wear||{}),st.items)};
   st.outfits.forEach(o=>{if(!Array.isArray(o.pieces))o.pieces=piecesFromIds([...Object.values(o.wear||{}),...(o.extras||[])],st.items);delete o.wear;delete o.extras});
-  delete st.wear;delete st.avatar;st.v=2;return st;
-}
-
-/* ============ sample data ============ */
-function sampleState(){
-  const s=freshState();s.sample=true;
-  const C=(name,cat,sub,color,seasons,extra={})=>({id:uid(),kind:'clothes',name,cat,sub,color,seasons,status:'在穿',brand:'',price:'',date:'',size:'',material:'',note:'',wearCount:0,sample:true,created:Date.now(),...extra});
-  const B=(kind,name,cat,sub,extra={})=>({id:uid(),kind,name,cat,sub,status:'在用',brand:'',price:'',date:'',shade:'',hex:'',opened:'',pao:'',expiry:'',note:'',sample:true,created:Date.now(),...extra});
-  const it=[
-    C('白色圆领T恤','top','T恤','white',['spring','summer'],{price:79,wearCount:12,material:'棉 100%',size:'M'}),
-    C('白色基础T恤','top','T恤','white',['spring','summer'],{price:59,wearCount:2,note:'和上面那件几乎一样，示范重复提醒'}),
-    C('蓝色条纹衬衫','top','衬衫','skyblue',['spring','autumn'],{price:199,wearCount:5}),
-    C('黑色高领毛衣','top','毛衣针织','black',['autumn','winter'],{price:259,wearCount:8,material:'羊毛 30%'}),
-    C('灰色连帽卫衣','top','卫衣','grey',['spring','autumn'],{price:169,wearCount:9}),
-    C('米白针织开衫','outer','针织开衫','cream',['spring','autumn'],{price:229,wearCount:4}),
-    C('驼色羊毛大衣','outer','大衣','camel',['winter'],{price:899,wearCount:3,size:'S'}),
-    C('藏青短款羽绒服','outer','羽绒服','navy',['winter'],{price:699}),
-    C('浅色直筒牛仔裤','pants','牛仔裤','denim',['spring','summer','autumn','winter'],{price:299,wearCount:15,size:'26'}),
-    C('黑色阔腿西裤','pants','阔腿裤','black',['spring','autumn','winter'],{price:239,wearCount:6}),
-    C('卡其百褶半裙','skirt','百褶裙','khaki',['spring','autumn'],{price:189,wearCount:3}),
-    C('碎花中长连衣裙','dress','中长连衣裙','multi',['summer'],{price:329,wearCount:2}),
-    C('白色帆布鞋','shoes','帆布鞋','white',['spring','summer','autumn'],{price:269,wearCount:20}),
-    C('棕色切尔西短靴','shoes','短靴','brown',['autumn','winter'],{price:599,wearCount:4}),
-    C('黑色皮质斜挎包','bag','斜挎包','black',['spring','summer','autumn','winter'],{price:459,wearCount:18}),
-    C('酒红羊绒围巾','acc','围巾','wine',['winter'],{price:199}),
-    C('奶白毛线帽','acc','毛线帽','cream',['winter'],{price:89}),
-    B('skincare','温和卸妆油','clean','卸妆油',{opened:'2026-08-02',pao:12}),
-    B('skincare','氨基酸洁面','clean','洁面',{opened:'2026-09-15',pao:12}),
-    B('skincare','保湿化妆水','toner','化妆水',{opened:'2026-07-01',pao:12}),
-    B('skincare','修护精华液','serum','精华液',{status:'囤货',expiry:'2028-05-01'}),
-    B('skincare','修护精华液（备用）','serum','精华液',{status:'囤货',expiry:'2028-06-01',note:'已经囤了两瓶'}),
-    B('skincare','清爽防晒乳','sun','防晒霜',{opened:'2025-12-20',pao:12}),
-    B('skincare','滋润面霜','moist','面霜',{opened:'2026-10-01',pao:12}),
-    B('makeup','水润粉底液','base','粉底液',{shade:'1N1',hex:'#E9C6A7',opened:'2026-05-10',pao:12}),
-    B('makeup','正红丝绒口红','lips','口红',{shade:'#999',hex:'#C02A3A',opened:'2026-02-01',pao:24}),
-    B('makeup','豆沙色唇釉','lips','唇釉',{shade:'R03',hex:'#C8757A',opened:'2026-06-01',pao:12}),
-    B('makeup','蜜桃腮红','cheek','腮红',{shade:'P02',hex:'#F2A09A',opened:'2026-04-01',pao:24}),
-    B('makeup','大地色眼影盘','eyes','眼影',{hex:'#A87B5E',opened:'2026-01-10',pao:24}),
-    B('makeup','纤长睫毛膏','eyes','睫毛膏',{opened:'2026-03-01',pao:6}),
-  ];
-  s.items=it;
-  const f=n=>it.find(i=>i.name===n).id;
-  const ids=names=>piecesFromIds(names.map(f),it);
-  s.outfits=[
-    {id:uid(),name:'秋日通勤',pieces:ids(['米白针织开衫','黑色高领毛衣','卡其百褶半裙','棕色切尔西短靴','黑色皮质斜挎包']),occasions:['通勤'],note:'',wornCount:3,lastWorn:'',sample:true,created:Date.now()},
-    {id:uid(),name:'周末逛街',pieces:ids(['灰色连帽卫衣','浅色直筒牛仔裤','白色帆布鞋','黑色皮质斜挎包']),occasions:['逛街','休闲'],note:'',wornCount:5,lastWorn:'',sample:true,created:Date.now()},
-    {id:uid(),name:'冬天出门',pieces:ids(['驼色羊毛大衣','黑色高领毛衣','黑色阔腿西裤','棕色切尔西短靴','酒红羊绒围巾','正红丝绒口红']),occasions:['通勤','约会'],note:'',wornCount:0,lastWorn:'',sample:true,created:Date.now()},
-  ];
-  s.board={pieces:s.outfits[0].pieces.map(p=>({...p}))};
-  return s;
+  st.custom=st.custom||{};delete st.wear;delete st.avatar;st.v=2;return st;
 }
 
 /* ============ beauty expiry ============ */
@@ -646,7 +622,7 @@ function viewClothes(){
   let h=`<div class="summary"><div><b>${all.filter(i=>!isGone(i)).length}</b><span>件衣物</span></div><div><b>${nowWear}</b><span>${seasonName(cs)}天能穿</span></div><div><b>${idle}</b><span>件闲置</span></div><div><b>${S.outfits.length}</b><span>套搭配</span></div></div>`;
   h+=`<div class="filters"><div class="chips scroll">${chip('全部季节',ui.season==='all','season','all')}${SEASONS.map(([k,l])=>chip(l+'季',ui.season===k,'season',k,live.filter(i=>(i.seasons||[]).includes(k)).length)).join('')}</div>`;
   h+=`<div class="chips scroll">${chip('全部',ui.cat==='all','cat','all',bySeason.length)}${cats.map(c=>{const n=bySeason.filter(i=>i.cat===c.key).length;return chip(c.label,ui.cat===c.key,'cat',c.key,n)}).join('')}</div>`;
-  if(ui.cat!=='all'){const c=cats.find(x=>x.key===ui.cat);h+=`<div class="chips scroll">${chip('全部'+c.label,ui.sub==='all','sub','all',undefined,'sub')}${c.subs.map(s=>{const n=byCat.filter(i=>i.sub===s).length;return n||ui.sub===s?chip(s,ui.sub===s,'sub',s,n,'sub'):''}).join('')}</div>`}
+  if(ui.cat!=='all'){const c=cats.find(x=>x.key===ui.cat);h+=`<div class="chips scroll">${chip('全部'+c.label,ui.sub==='all','sub','all',undefined,'sub')}${subsWithUsed('clothes',c.key).map(s=>{const n=byCat.filter(i=>i.sub===s).length;return n||ui.sub===s?chip(s,ui.sub===s,'sub',s,n,'sub'):''}).join('')}<button class="chip sub" data-action="subs" data-kind="clothes" data-val="${c.key}">编辑小类</button></div>`}
   h+=`</div>`;
   if(!all.length)return h+emptyBox('衣橱还是空的','点右下角「添加」，拍一张照片或者选一下颜色，就能记下一件衣服。','<button class="btn primary" data-action="fab">添加第一件</button>');
   h+=list.length?`<div class="grid">${list.map(itemCard).join('')}</div>`:emptyBox('这里没有衣服','换个季节或分类看看。');
@@ -663,7 +639,7 @@ function viewBeauty(kind){
   let h=`<div class="summary"><div><b>${all.filter(i=>i.status==='在用').length}</b><span>在用</span></div><div><b>${all.filter(i=>i.status==='囤货').length}</b><span>囤货</span></div><div><b>${exp.length}</b><span>快过期</span></div><div><b>${all.filter(isGone).length}</b><span>已用完</span></div></div>`;
   if(exp.length)h+=`<div class="alert"><h3>先用这些：快过期或已过期</h3><div class="chips">${exp.map(i=>`<button class="chip" data-action="open-item" data-id="${i.id}">${esc(itemName(i))} <span class="n">${daysLeft(i)<0?'已过期':daysLeft(i)+'天'}</span></button>`).join('')}</div></div>`;
   h+=`<div class="filters"><div class="chips scroll">${chip('全部',st==='all','bstatus','all')}${K.status.map(s=>chip(s,st===s,'bstatus',s,all.filter(i=>i.status===s).length)).join('')}</div>`;
-  h+=`<div class="chips scroll">${chip('全部分类',bc==='all','bcat','all')}${K.cats.map(c=>{const n=byStatus.filter(i=>i.cat===c.key).length;return chip(c.label,bc===c.key,'bcat',c.key,n)}).join('')}</div></div>`;
+  h+=`<div class="chips scroll">${chip('全部分类',bc==='all','bcat','all')}${K.cats.map(c=>{const n=byStatus.filter(i=>i.cat===c.key).length;return chip(c.label,bc===c.key,'bcat',c.key,n)}).join('')}${bc!=='all'?`<button class="chip sub" data-action="subs" data-kind="${kind}" data-val="${bc}">编辑小类</button>`:''}</div></div>`;
   if(!all.length)return h+emptyBox(`还没有记录${K.label}`,`记下品牌、色号和开封日期，快过期时这里会提醒你。`,`<button class="btn primary" data-action="fab">添加${K.label}</button>`);
   if(!list.length)return h+emptyBox('这里没有东西','换个分类看看。');
   const groups=K.cats.map(c=>[c,list.filter(i=>i.cat===c.key)]).filter(g=>g[1].length);
@@ -738,7 +714,7 @@ function openSheet(s){sheet=s;$('#sheetWrap').hidden=false;document.body.style.o
 function closeSheet(){sheet=null;$('#sheetWrap').hidden=true;document.body.style.overflow='';$('#sheet').innerHTML=''}
 function renderSheet(reset){
   if(!sheet)return;const el=$('#sheet');const top=el.scrollTop;
-  el.innerHTML='<div class="grab"></div>'+({form:sheetForm,item:sheetItem,outfit:sheetOutfit,saveOutfit:sheetSaveOutfit,check:sheetCheck,settings:sheetSettings}[sheet.type])();
+  el.innerHTML='<div class="grab"></div>'+({form:sheetForm,item:sheetItem,outfit:sheetOutfit,saveOutfit:sheetSaveOutfit,check:sheetCheck,subs:sheetSubs,settings:sheetSettings}[sheet.type])();
   el.scrollTop=reset?0:top;
 }
 const head=t=>`<div class="sheet-head"><h2>${t}</h2><button class="icon-btn" data-action="close-sheet" aria-label="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>`;
@@ -754,7 +730,7 @@ function dupHTML(d,mode){
   const colorTxt=d.kind==='clothes'&&d.color&&COLOR[d.color]?COLOR[d.color].name:d.shade?('色号 '+d.shade):'';
   return `<div class="dup has"><p><b>你已经有 ${sim.length} ${KIND[d.kind].unit}「${esc(what)}」了</b>${same?`，其中 <b>${same} ${KIND[d.kind].unit}也是${esc(colorTxt)}</b>`:''}。${mode==='check'?'':'确定还要再添一件吗？'}</p><div class="mini">${sim.slice(0,12).map(({i})=>`<button data-action="open-item" data-id="${i.id}" title="${esc(itemName(i))}">${thumbHTML(i)}</button>`).join('')}</div></div>`;
 }
-function newDraft(kind){const K=KIND[kind];const c=K.cats[0];return{kind,cat:c.key,sub:c.subs[0],color:kind==='clothes'?'':'',seasons:kind==='clothes'?[]:undefined,status:K.status[0],name:'',brand:'',price:'',date:todayStr(),size:'',material:'',shade:'',hex:'',opened:'',pao:'',expiry:'',note:'',photoNew:null,photoRemoved:false,cutNew:null,cutRemoved:false}}
+function newDraft(kind){const K=KIND[kind];const c=K.cats[0];return{kind,cat:c.key,sub:subsOf(kind,c.key)[0]||'',color:kind==='clothes'?'':'',seasons:kind==='clothes'?[]:undefined,status:K.status[0],name:'',brand:'',price:'',date:todayStr(),size:'',material:'',shade:'',hex:'',opened:'',pao:'',expiry:'',note:'',photoNew:null,photoRemoved:false,cutNew:null,cutRemoved:false}}
 function inp(id,label,val,type='text',extra='',cls=''){return `<label class="inp ${cls}"><span class="lbl">${label}</span><input id="${id}" type="${type}" value="${esc(val)}" ${extra}></label>`}
 function sheetForm(){
   const d=sheet.draft;const K=KIND[d.kind];const cat=K.cats.find(c=>c.key===d.cat)||K.cats[0];
@@ -766,7 +742,7 @@ function sheetForm(){
   h+=`<div class="photo-pick"><label class="photo-box" for="f-photo" style="${cut?'background:var(--board)':''}">${photo?`<img src="${photo}" alt="" style="${cut?'object-fit:contain;padding:6%':''}">`:thumbSVG({...d,id:'_'})+'<span>上传图片</span>'}</label><input id="f-photo" type="file" accept="image/*" hidden><div class="photo-side"><span>${photo?(cut?'现在用的是抠好的图。':'可以直接用网上的商品图或实拍图截图。需要的话点「抠图」把衣服单独抠出来。'):'可以直接用网上的商品图、实拍图或截图。没有图也行。'}</span><div class="photo-acts">${orig?`<button class="btn sm soft" data-action="f-cut">${cut?'重新抠图':'抠图'}</button>`:''}${cut?'<button class="btn sm" data-action="f-uncut">用原图</button>':''}${photo?'<label class="btn sm" for="f-photo">换一张</label><button class="btn sm ghost" data-action="f-rmphoto">移除</button>':''}</div></div></div>`;
   if(photo){const v=d.view||{z:1,x:0,y:0};h+=`<div class="field"><span class="lbl">列表里的显示范围</span><div class="frame"><div class="thumb ${cut?'cutimg':''}" id="frameThumb"><img src="${photo}" alt="" draggable="false" style="${viewStyle(v)}"></div><div class="frame-side"><label class="mini-range">放大<input type="range" id="f-zoom" min="1" max="3" step="0.05" value="${v.z||1}" aria-label="放大"></label><span class="hint">默认显示整张图。想只显示一部分，就把它放大，再在左边的图上拖动来挑位置。</span><button class="btn sm ghost" data-action="f-frame-reset" style="justify-self:start">恢复完整显示</button></div></div></div>`}
   h+=`<div class="field"><span class="lbl">大类</span><div class="chips">${K.cats.map(c=>`<button class="chip ${c.key===d.cat?'on':''}" data-action="f-set" data-field="cat" data-val="${c.key}">${c.label}</button>`).join('')}</div></div>`;
-  h+=`<div class="field"><span class="lbl">小类</span><div class="chips">${cat.subs.map(s=>`<button class="chip sub ${s===d.sub?'on':''}" data-action="f-set" data-field="sub" data-val="${esc(s)}">${esc(s)}</button>`).join('')}</div></div>`;
+  h+=`<div class="field"><span class="lbl">小类</span><div class="chips">${(()=>{const l=[...subsOf(d.kind,cat.key)];if(d.sub&&!l.includes(d.sub))l.push(d.sub);return l})().map(s=>`<button class="chip sub ${s===d.sub?'on':''}" data-action="f-set" data-field="sub" data-val="${esc(s)}">${esc(s)}</button>`).join('')}${sheet.addSub?'':'<button class="chip sub" data-action="f-addsub">＋ 新增小类</button>'}</div>${sheet.addSub?`<div class="cut-row" style="margin-top:4px"><input id="f-newsub" class="newsub" placeholder="比如：斗篷、棒球服" maxlength="12"><button class="btn sm primary" data-action="f-addsub-ok">添加</button><button class="btn sm ghost" data-action="f-addsub-cancel">取消</button></div>`:''}</div>`;
   if(d.kind==='clothes'){
     h+=`<div class="field"><span class="lbl">颜色</span><div class="swatches">${COLORS.map(([k,n,hex])=>`<button class="sw-wrap" data-action="f-set" data-field="color" data-val="${k}" aria-label="${n}"><span class="sw ${d.color===k?'on':''}" style="background:${hex==='multi'?'conic-gradient(#E07A8B 0 25%,#6E9FD1 0 50%,#7DAF6A 0 75%,#E9B949 0)':hex}"></span>${n}</button>`).join('')}</div></div>`;
     h+=`<div class="field"><span class="lbl">适合季节（可多选）</span><div class="chips">${SEASONS.map(([k,l])=>`<button class="chip ${(d.seasons||[]).includes(k)?'on':''}" data-action="f-season" data-val="${k}">${l}</button>`).join('')}<button class="chip sub" data-action="f-season" data-val="all">四季都行</button></div></div>`;
@@ -864,9 +840,20 @@ function sheetCheck(){
   h+=`<p class="hint" style="margin:0 0 6px">看中一样东西？先选一下它是什么，马上告诉你家里有没有类似的。</p>`;
   h+=`<div class="field"><div class="chips">${Object.entries(KIND).map(([k,v])=>`<button class="chip ${c.kind===k?'on':''}" data-action="c-kind" data-val="${k}">${v.label}</button>`).join('')}</div></div>`;
   h+=`<div class="field"><span class="lbl">大类</span><div class="chips">${K.cats.map(x=>`<button class="chip sub ${x.key===cat.key?'on':''}" data-action="c-cat" data-val="${x.key}">${x.label}</button>`).join('')}</div></div>`;
-  h+=`<div class="field"><span class="lbl">小类</span><div class="chips"><button class="chip sub ${!c.sub?'on':''}" data-action="c-sub" data-val="">不限</button>${cat.subs.map(s=>`<button class="chip sub ${c.sub===s?'on':''}" data-action="c-sub" data-val="${esc(s)}">${esc(s)}</button>`).join('')}</div></div>`;
+  h+=`<div class="field"><span class="lbl">小类</span><div class="chips"><button class="chip sub ${!c.sub?'on':''}" data-action="c-sub" data-val="">不限</button>${subsWithUsed(c.kind,cat.key).map(s=>`<button class="chip sub ${c.sub===s?'on':''}" data-action="c-sub" data-val="${esc(s)}">${esc(s)}</button>`).join('')}</div></div>`;
   if(c.kind==='clothes')h+=`<div class="field"><span class="lbl">颜色</span><div class="swatches">${COLORS.map(([k,n,hex])=>`<button class="sw-wrap" data-action="c-color" data-val="${k}" aria-label="${n}"><span class="sw ${c.color===k?'on':''}" style="background:${hex==='multi'?'conic-gradient(#E07A8B 0 25%,#6E9FD1 0 50%,#7DAF6A 0 75%,#E9B949 0)':hex}"></span>${n}</button>`).join('')}</div></div>`;
   h+=`<div class="field">${dupHTML({kind:c.kind,cat:cat.key,sub:c.sub,color:c.color},'check')}</div>`;
+  return h;
+}
+function sheetSubs(){
+  const k=sheet.kind,K=KIND[k],cat=K.cats.find(c=>c.key===sheet.cat)||K.cats[0];const list=subsOf(k,cat.key);
+  let h=head('编辑小类');
+  h+=`<div class="field"><div class="chips">${Object.entries(KIND).map(([kk,v])=>`<button class="chip ${k===kk?'on':''}" data-action="sr-kind" data-val="${kk}">${v.label}</button>`).join('')}</div></div>`;
+  h+=`<div class="field"><span class="lbl">大类</span><div class="chips">${K.cats.map(c=>`<button class="chip sub ${c.key===cat.key?'on':''}" data-action="sr-cat" data-val="${c.key}">${c.label}</button>`).join('')}</div></div>`;
+  h+=`<div class="field"><span class="lbl">「${cat.label}」下面的小类 · 直接改名字，改完点别处就保存</span><div class="rows">${list.map((n,idx)=>{const c=S.items.filter(i=>i.kind===k&&i.cat===cat.key&&i.sub===n).length;return `<div class="subrow"><input class="newsub" id="sr-${idx}" data-idx="${idx}" value="${esc(n)}" maxlength="12" aria-label="小类名字"><span class="n">${c?c+'件':''}</span><button class="btn sm ghost" data-action="sr-up" data-val="${idx}" ${idx?'':'disabled'} aria-label="往上移">↑</button><button class="btn sm ${sheet.armed===idx?'danger armed':'ghost'}" data-action="sr-del" data-val="${idx}">${sheet.armed===idx?(c?'确定？':'确定'):'删除'}</button></div>`}).join('')||'<p class="hint">这一类还没有小类。</p>'}</div></div>`;
+  if(typeof sheet.armed==='number'){const n=list[sheet.armed];const c=S.items.filter(i=>i.kind===k&&i.cat===cat.key&&i.sub===n).length;if(c)h+=`<p class="hint" style="color:var(--warn)">「${esc(n)}」下面有 ${c} 件，删除后它们还在「${cat.label}」里，只是不再有小类。</p>`}
+  h+=`<div class="cut-row"><input id="sr-new" class="newsub" placeholder="新的小类，比如：斗篷" maxlength="12"><button class="btn sm primary" data-action="sr-add">添加</button></div>`;
+  h+=`<div class="sheet-actions"><button class="btn primary" data-action="close-sheet">完成</button>${S.custom&&S.custom[k]&&S.custom[k][cat.key]?'<button class="btn ghost" data-action="sr-reset">恢复成默认的小类</button>':''}</div>`;
   return h;
 }
 function sheetSettings(){
@@ -875,7 +862,12 @@ function sheetSettings(){
   const never=cl.filter(i=>!(i.wearCount>0));
   const top=cl.slice().sort((a,b)=>(b.wearCount||0)-(a.wearCount||0)).slice(0,3).filter(i=>i.wearCount>0);
   let h=head('统计与备份');
-  h+=`<div class="field"><span class="lbl">衣橱统计</span><div class="stat-list">${KIND.clothes.cats.map(c=>{const n=cl.filter(i=>i.cat===c.key).length;return n?`<div><span>${c.label}</span><span class="mono">${n}</span></div>`:''}).join('')}<div><span>护肤品（未用完）</span><span class="mono">${S.items.filter(i=>i.kind==='skincare'&&!isGone(i)).length}</span></div><div><span>彩妆（未用完）</span><span class="mono">${S.items.filter(i=>i.kind==='makeup'&&!isGone(i)).length}</span></div><div><span>记录的总花费</span><span class="mono">¥${spend.toLocaleString('zh-CN',{maximumFractionDigits:0})}</span></div><div><span>一次都没穿过的衣物</span><span class="mono">${never.length}</span></div>${top.length?`<div><span>穿得最多</span><span>${top.map(i=>esc(itemName(i))+' ×'+i.wearCount).join('、')}</span></div>`:''}</div></div>`;
+  const statBlock=kind=>{const live=S.items.filter(i=>i.kind===kind&&!isGone(i));return KIND[kind].cats.map(c=>{const inCat=live.filter(i=>i.cat===c.key);if(!inCat.length)return '';const subs=subsWithUsed(kind,c.key).map(sb=>[sb,inCat.filter(i=>i.sub===sb).length]).filter(x=>x[1]);const none=inCat.filter(i=>!i.sub).length;
+    return `<details><summary><span>${c.label}</span><span class="mono">${inCat.length}</span></summary><div class="stat-sub"><button class="chip sub on" data-action="goto" data-kind="${kind}" data-cat="${c.key}" data-val="all">看全部${c.label}</button>${subs.map(([sb,n])=>`<button class="chip sub" data-action="goto" data-kind="${kind}" data-cat="${c.key}" data-val="${esc(sb)}">${esc(sb)} <span class="n">${n}</span></button>`).join('')}${none?`<span class="hint">没有小类的 ${none} 件</span>`:''}</div></details>`}).join('')};
+  h+=`<div class="field"><span class="lbl">衣服 · 点一类展开，点小类直接去看</span><div class="stat-list">${statBlock('clothes')||'<p class="hint">还没有衣服</p>'}</div></div>`;
+  h+=`<div class="field"><span class="lbl">护肤品（未用完）</span><div class="stat-list">${statBlock('skincare')||'<p class="hint">还没有护肤品</p>'}</div></div>`;
+  h+=`<div class="field"><span class="lbl">彩妆（未用完）</span><div class="stat-list">${statBlock('makeup')||'<p class="hint">还没有彩妆</p>'}</div></div>`;
+  h+=`<div class="field"><span class="lbl">其他</span><div class="stat-list"><div><span>记录的总花费</span><span class="mono">¥${spend.toLocaleString('zh-CN',{maximumFractionDigits:0})}</span></div><div><span>一次都没穿过的衣物</span><span class="mono">${never.length}</span></div>${top.length?`<div><span>穿得最多</span><span>${top.map(i=>esc(itemName(i))+' ×'+i.wearCount).join('、')}</span></div>`:''}</div><div class="sheet-actions" style="margin-top:8px"><button class="btn" data-action="subs" data-kind="clothes" data-val="top">编辑小类</button></div></div>`;
   h+=`<div class="field"><span class="lbl">备份（换手机、清浏览器之前一定要做）</span><p class="hint">${Cloud.on?'记录和照片保存在你的 Claude 账号里，只有你自己能看到。手机和电脑登录同一个账号、打开同一个链接，就会自动同步。备份文件是多一份保险。':'现在记录只存在这台设备的这个浏览器里。定期导出一份备份文件，换设备时再导入。'}</p><div class="sheet-actions" style="margin-top:4px"><button class="btn" data-action="export-file">导出备份文件</button><button class="btn" data-action="export-copy">复制备份文本</button></div><div class="sheet-actions" style="margin-top:0"><label class="btn" for="import-file">从文件导入</label><input id="import-file" type="file" accept=".json,application/json" hidden></div><textarea class="inp-area" id="import-text" placeholder="或者把备份文本粘贴到这里，再点「从文本导入」"></textarea><div class="sheet-actions" style="margin-top:0"><button class="btn" data-action="import-text">从文本导入</button></div>${sheet.pendingImport?`<div class="dup has"><p>导入会<b>替换掉</b>现在的全部记录（${S.items.length} 件单品、${S.outfits.length} 套搭配）。</p><div class="sheet-actions" style="margin-top:0"><button class="btn primary" data-action="import-confirm">确定替换</button><button class="btn ghost" data-action="import-cancel">算了</button></div></div>`:''}</div>`;
   h+=`<div class="field"><span class="lbl">危险操作</span><div class="sheet-actions" style="margin-top:0"><button class="btn danger ${sheet.armed?'armed':''}" data-action="wipe">${sheet.armed?'真的全部清空？点这里确认':'清空所有记录'}</button></div></div>`;
   return h;
@@ -928,12 +920,12 @@ async function onClick(e){
     case 'fab':{
       if(ui.tab==='outfits'){ui.editingOutfit=null;S.board={pieces:[]};ui.sel=-1;save();go('board');break}
       const kind=ui.tab==='skincare'||ui.tab==='makeup'?ui.tab:'clothes';const d=newDraft(kind);
-      if(kind==='clothes'&&ui.cat!=='all'){d.cat=ui.cat;d.sub=ui.sub!=='all'?ui.sub:KIND.clothes.cats.find(c=>c.key===ui.cat).subs[0]}
+      if(kind==='clothes'&&ui.cat!=='all'){d.cat=ui.cat;d.sub=ui.sub!=='all'?ui.sub:(subsOf('clothes',ui.cat)[0]||'')}
       if(kind==='clothes'&&ui.season!=='all')d.seasons=[ui.season];
-      if(kind!=='clothes'&&ui.bcat[kind]!=='all'){d.cat=ui.bcat[kind];d.sub=KIND[kind].cats.find(c=>c.key===d.cat).subs[0]}
+      if(kind!=='clothes'&&ui.bcat[kind]!=='all'){d.cat=ui.bcat[kind];d.sub=subsOf(kind,d.cat)[0]||''}
       openSheet({type:'form',draft:d});break}
     case 'close-sheet':closeSheet();break;
-    case 'f-set':{syncDraft();const d=sheet.draft;d[el.dataset.field]=(el.dataset.field==='color'&&d.color===val)?'':val;if(el.dataset.field==='cat'){const c=KIND[d.kind].cats.find(x=>x.key===val);d.sub=c.subs[0]}sheet.armed=false;renderSheet();break}
+    case 'f-set':{syncDraft();const d=sheet.draft;d[el.dataset.field]=(el.dataset.field==='color'&&d.color===val)?'':val;if(el.dataset.field==='cat'){d.sub=subsOf(d.kind,val)[0]||'';sheet.addSub=false}sheet.armed=false;renderSheet();break}
     case 'f-season':{syncDraft();const d=sheet.draft;if(val==='all')d.seasons=SEASONS.map(s=>s[0]);else d.seasons=d.seasons.includes(val)?d.seasons.filter(s=>s!==val):[...d.seasons,val];renderSheet();break}
     case 'f-rmphoto':syncDraft();sheet.draft.photoNew=null;sheet.draft.photoRemoved=true;renderSheet();break;
     case 'f-save':saveDraft();break;
@@ -947,6 +939,17 @@ async function onClick(e){
     case 'item-uncut':{const i=getItem(sheet.id);dropImage(i,'cut');save();renderSheet();render();toast('已改回原图');break}
     case 'f-cut':{syncDraft();const d=sheet.draft;const it=d.id&&getItem(d.id);const src=d.photoNew||(it&&srcOf(it,'orig'));if(src)openCut(src,url=>{d.cutNew=url;d.cutRemoved=false;renderSheet()});break}
     case 'frame-reset':{const i=getItem(sheet.id);if(i){delete i.view;save();renderSheet();render()}break}
+    case 'goto':{const k=el.dataset.kind,c=el.dataset.cat;closeSheet();if(k==='clothes'){ui.season='all';ui.cat=c;ui.sub=val;ui.showGone=false}else{ui.bcat[k]=c;ui.bstatus[k]='all'}go(k);break}
+    case 'subs':{syncDraft();openSheet({type:'subs',kind:el.dataset.kind,cat:val});break}
+    case 'sr-kind':sheet.kind=val;sheet.cat=KIND[val].cats[0].key;sheet.armed=null;renderSheet();break;
+    case 'sr-cat':sheet.cat=val;sheet.armed=null;renderSheet();break;
+    case 'sr-up':{const l=[...subsOf(sheet.kind,sheet.cat)];const i=+val;if(i>0){[l[i-1],l[i]]=[l[i],l[i-1]];setSubs(sheet.kind,sheet.cat,l);renderSheet();render()}break}
+    case 'sr-del':{const i=+val;if(sheet.armed!==i){sheet.armed=i;renderSheet();break}const l=[...subsOf(sheet.kind,sheet.cat)];const n=l.splice(i,1)[0];S.items.forEach(it=>{if(it.kind===sheet.kind&&it.cat===sheet.cat&&it.sub===n)it.sub=''});setSubs(sheet.kind,sheet.cat,l);sheet.armed=null;renderSheet();render();toast('已删除「'+n+'」');break}
+    case 'sr-add':{const inp=document.getElementById('sr-new');const n=(inp.value||'').trim();if(!n){inp.focus();break}const l=[...subsOf(sheet.kind,sheet.cat)];if(l.includes(n)){toast('已经有「'+n+'」了');break}l.push(n);setSubs(sheet.kind,sheet.cat,l);renderSheet();render();toast('已添加「'+n+'」');const ni=document.getElementById('sr-new');if(ni)ni.focus();break}
+    case 'sr-reset':{delete S.custom[sheet.kind][sheet.cat];save();renderSheet();render();toast('已恢复默认');break}
+    case 'f-addsub':syncDraft();sheet.addSub=true;renderSheet();{const ni=document.getElementById('f-newsub');if(ni)ni.focus()}break;
+    case 'f-addsub-cancel':syncDraft();sheet.addSub=false;renderSheet();break;
+    case 'f-addsub-ok':{const n=(document.getElementById('f-newsub').value||'').trim();syncDraft();if(!n){toast('先写一个名字');break}const d=sheet.draft;const l=[...subsOf(d.kind,d.cat)];if(!l.includes(n)){l.push(n);setSubs(d.kind,d.cat,l)}d.sub=n;sheet.addSub=false;renderSheet();toast('已添加小类「'+n+'」');break}
     case 'f-frame-reset':syncDraft();sheet.draft.view=null;renderSheet();break;
     case 'f-uncut':syncDraft();sheet.draft.cutNew=null;sheet.draft.cutRemoved=true;renderSheet();break;
     case 'bslot':ui.bslot=val;render();break;
@@ -1040,6 +1043,13 @@ function frameApply(){const t=frameTarget();const img=document.querySelector('#f
 function frameCommit(){const t=frameTarget();if(!t||sheet.type!=='item')return;const v=t.view;if(v&&(v.z>1.001||Math.abs(v.x)>0.5||Math.abs(v.y)>0.5))t.view={z:+(+v.z).toFixed(2),x:Math.round(v.x),y:Math.round(v.y)};else delete t.view;save();render()}
 document.addEventListener('input',e=>{if(e.target.id!=='f-zoom')return;const t=frameTarget();if(!t)return;const v=t.view=t.view||{z:1,x:0,y:0};v.z=+e.target.value;frameClamp(v);frameApply()});
 document.addEventListener('change',e=>{if(e.target.id==='f-zoom')frameCommit()});
+document.addEventListener('change',e=>{
+  const t=e.target;if(!t.id||!t.id.startsWith('sr-')||t.id==='sr-new'||!sheet||sheet.type!=='subs')return;
+  const i=+t.dataset.idx,l=[...subsOf(sheet.kind,sheet.cat)],old=l[i],n=t.value.trim();
+  if(!n||n===old){t.value=old;return}if(l.includes(n)){toast('已经有「'+n+'」了');t.value=old;return}
+  l[i]=n;S.items.forEach(it=>{if(it.kind===sheet.kind&&it.cat===sheet.cat&&it.sub===old)it.sub=n});setSubs(sheet.kind,sheet.cat,l);render();toast('「'+old+'」改成了「'+n+'」');
+});
+document.addEventListener('keydown',e=>{if(e.key!=='Enter')return;if(e.target.id==='sr-new'){e.preventDefault();document.querySelector('[data-action=sr-add]').click()}else if(e.target.id==='f-newsub'){e.preventDefault();document.querySelector('[data-action=f-addsub-ok]').click()}else if(e.target.id&&e.target.id.startsWith('sr-'))e.target.blur()});
 document.addEventListener('pointerdown',e=>{const t=e.target.closest('#frameThumb');const tg=frameTarget();if(!t||!tg)return;e.preventDefault();const v=tg.view=tg.view||{z:1,x:0,y:0};
   if(v.z<=1){toast('先拖动「放大」滑块，再拖图片');return}
   fdrag={w:t.getBoundingClientRect().width,sx:e.clientX,sy:e.clientY,ox:v.x,oy:v.y};try{t.setPointerCapture(e.pointerId)}catch(err){}});
@@ -1172,7 +1182,8 @@ function cutFinish(){
   let st=null;
   try{await DB.open();st=await DB.get('kv','state');const ph=await DB.all('photos');ph.forEach(([k,v])=>setPhoto(k,v))}catch(e){storageOK=false}
   Cloud.localHad=!!(st&&Array.isArray(st.items));
-  S=Cloud.localHad?normalizeState({...freshState(),...st}):sampleState();
+  S=Cloud.localHad?normalizeState({...freshState(),...st}):freshState();
+  if(purgeSamples(S))save();
   const t=location.hash.slice(1);if(['clothes','skincare','makeup','outfits','board'].includes(t))ui.tab=t;
   render();setStatus();connectCloud();
   try{if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol)&&document.querySelector('link[rel=manifest]'))navigator.serviceWorker.register('sw.js').catch(()=>{})}catch(e){}
