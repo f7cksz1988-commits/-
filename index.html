@@ -180,6 +180,16 @@ main{padding-block:4px 120px}
 .stat-list details[open] summary::after{transform:rotate(90deg)}
 .stat-list summary span:first-child{flex:1}
 .stat-sub{display:flex;flex-wrap:wrap;gap:6px;padding:0 0 10px}
+.imp-row{display:grid;grid-template-columns:28px 72px 1fr;gap:10px;align-items:start;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:10px}
+.imp-row.off{opacity:.55}
+.imp-row .thumb{width:72px;border-radius:10px}
+.imp-row .thumb img{object-fit:contain}
+.imp-check{width:26px;height:26px;border-radius:8px;border:2px solid var(--line);background:var(--surface);font-weight:700;color:var(--accent-ink);padding:0}
+.imp-check.on{background:var(--accent);border-color:var(--accent)}
+.imp-fields{display:grid;gap:6px;min-width:0}
+.imp-line{display:flex;gap:6px;align-items:center;min-width:0}
+.imp-line .newsub{flex:1 1 0;width:0;min-width:0}
+.imp-fields select.newsub{padding:0 6px}
 .frame{display:flex;gap:14px;align-items:center;flex-wrap:wrap}
 .frame .thumb{width:150px;flex:none;cursor:grab;touch-action:none;border:1px dashed var(--muted)}
 .frame-side{display:grid;gap:8px;flex:1 1 160px;min-width:0}
@@ -443,6 +453,7 @@ async function connectCloud(){
   if(!db||!user){Cloud.status='local';setStatus();return}
   const id=await user.id();if(!id){Cloud.status='local';setStatus();return}
   c.use('assets').then(a=>{Cloud.assets=a}).catch(()=>{});
+  c.use('sample').then(async sm=>{if(!sm)return;const lim=await sm.limits().catch(()=>null);if(lim&&lim.images){Cloud.sample=sm;render()}}).catch(()=>{});
   const col=db.collection('data/users/'+id);Cloud.imgCol=db.collection('data/users/'+id+'/img/chunks');
   const timer=setTimeout(()=>{if(!Cloud.on){Cloud.status='unreachable';setStatus()}},10000);
   col.onSnapshot(async snap=>{
@@ -690,11 +701,12 @@ function viewClothes(){
   const cs=curSeason();const nowWear=all.filter(i=>!isGone(i)&&(i.seasons||[]).includes(cs)).length;
   const idle=all.filter(i=>i.status==='闲置').length;
   let h=`<div class="summary"><div><b>${all.filter(i=>!isGone(i)).length}</b><span>件衣物</span></div><div><b>${nowWear}</b><span>${seasonName(cs)}天能穿</span></div><div><b>${idle}</b><span>件闲置</span></div><div><b>${S.outfits.length}</b><span>套搭配</span></div></div>`;
+  if(Cloud.sample)h+=`<button class="btn soft" data-action="import" style="width:100%;margin-bottom:12px">从淘宝 / 闲鱼 / 优衣库订单截图导入</button>`;
   h+=`<div class="filters"><div class="chips scroll">${chip('全部季节',ui.season==='all','season','all')}${SEASONS.map(([k,l])=>chip(l+'季',ui.season===k,'season',k,live.filter(i=>(i.seasons||[]).includes(k)).length)).join('')}</div>`;
   h+=`<div class="chips scroll">${chip('全部',ui.cat==='all','cat','all',bySeason.length)}${cats.map(c=>{const n=bySeason.filter(i=>i.cat===c.key).length;return chip(c.label,ui.cat===c.key,'cat',c.key,n)}).join('')}</div>`;
   if(ui.cat!=='all'){const c=cats.find(x=>x.key===ui.cat);h+=`<div class="chips scroll">${chip('全部'+c.label,ui.sub==='all','sub','all',undefined,'sub')}${subsWithUsed('clothes',c.key).map(s=>{const n=byCat.filter(i=>i.sub===s).length;return n||ui.sub===s?chip(s,ui.sub===s,'sub',s,n,'sub'):''}).join('')}<button class="chip sub" data-action="subs" data-kind="clothes" data-val="${c.key}">编辑小类</button></div>`}
   h+=`</div>`;
-  if(!all.length)return h+emptyBox('衣橱还是空的','点右下角「添加」，拍一张照片或者选一下颜色，就能记下一件衣服。','<button class="btn primary" data-action="fab">添加第一件</button>');
+  if(!all.length)return h+emptyBox('衣橱还是空的','点右下角「添加」一件一件记，或者用上面的按钮从订单截图一次导入很多件。','<button class="btn primary" data-action="fab">添加第一件</button>');
   h+=list.length?`<div class="grid">${list.map(itemCard).join('')}</div>`:emptyBox('这里没有衣服','换个季节或分类看看。');
   const gone=all.filter(isGone).length;
   if(gone)h+=`<p class="sub-note" style="margin-top:16px"><button class="link" data-action="toggle-gone">${ui.showGone?'隐藏':'显示'}已处理的 ${gone} 件</button></p>`;
@@ -781,10 +793,10 @@ function go(tab){ui.tab=tab;ui.q='';$('#q').value='';try{history.replaceState(nu
 
 /* ============ sheets ============ */
 function openSheet(s){sheet=s;$('#sheetWrap').hidden=false;document.body.style.overflow='hidden';renderSheet(true)}
-function closeSheet(){sheet=null;$('#sheetWrap').hidden=true;document.body.style.overflow='';$('#sheet').innerHTML=''}
+function closeSheet(){if(impCtl){impCtl.abort();impCtl=null}sheet=null;$('#sheetWrap').hidden=true;document.body.style.overflow='';$('#sheet').innerHTML=''}
 function renderSheet(reset){
   if(!sheet)return;const el=$('#sheet');const top=el.scrollTop;
-  el.innerHTML='<div class="grab"></div>'+({form:sheetForm,item:sheetItem,outfit:sheetOutfit,saveOutfit:sheetSaveOutfit,check:sheetCheck,subs:sheetSubs,settings:sheetSettings}[sheet.type])();
+  el.innerHTML='<div class="grab"></div>'+({form:sheetForm,item:sheetItem,outfit:sheetOutfit,saveOutfit:sheetSaveOutfit,check:sheetCheck,subs:sheetSubs,import:sheetImport,settings:sheetSettings}[sheet.type])();
   el.scrollTop=reset?0:top;
 }
 const head=t=>`<div class="sheet-head"><h2>${t}</h2><button class="icon-btn" data-action="close-sheet" aria-label="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>`;
@@ -868,7 +880,7 @@ function sheetItem(){
   if(i.kind==='clothes'){rows.push(['颜色',COLOR[i.color]?COLOR[i.color].name:'—'],['季节',(i.seasons||[]).map(seasonName).join(' ')||'—'])}
   if(i.shade)rows.push(['色号',esc(i.shade)]);
   if(i.brand)rows.push(['品牌',esc(i.brand)]);
-  if(i.price)rows.push(['价格',`<span class="mono">¥${esc(i.price)}</span>`]);
+  if(i.price)rows.push(['价格',i.cur==='JPY'?`<span class="mono">${esc(i.price)}</span> 日元`:`<span class="mono">¥${esc(i.price)}</span>`]);
   if(i.date)rows.push(['购买',`<span class="mono">${esc(i.date)}</span>`]);
   if(i.size)rows.push(['尺码',esc(i.size)]);if(i.material)rows.push(['材质',esc(i.material)]);
   if(i.opened)rows.push(['开封',`<span class="mono">${esc(i.opened)}</span>${i.pao?` · 开封后 <span class="mono">${esc(i.pao)}M</span>`:''}`]);
@@ -930,7 +942,7 @@ function sheetSubs(){
 }
 function sheetSettings(){
   const cl=S.items.filter(i=>i.kind==='clothes'&&!isGone(i));
-  const spend=S.items.reduce((s,i)=>s+(parseFloat(i.price)||0),0);
+  const spend=S.items.filter(i=>i.cur!=='JPY').reduce((s,i)=>s+(parseFloat(i.price)||0),0),spendJ=S.items.filter(i=>i.cur==='JPY').reduce((s,i)=>s+(parseFloat(i.price)||0),0);
   const never=cl.filter(i=>!(i.wearCount>0));
   const top=cl.slice().sort((a,b)=>(b.wearCount||0)-(a.wearCount||0)).slice(0,3).filter(i=>i.wearCount>0);
   let h=head('统计与备份');
@@ -939,7 +951,7 @@ function sheetSettings(){
   h+=`<div class="field"><span class="lbl">衣服 · 点一类展开，点小类直接去看</span><div class="stat-list">${statBlock('clothes')||'<p class="hint">还没有衣服</p>'}</div></div>`;
   h+=`<div class="field"><span class="lbl">护肤品（未用完）</span><div class="stat-list">${statBlock('skincare')||'<p class="hint">还没有护肤品</p>'}</div></div>`;
   h+=`<div class="field"><span class="lbl">彩妆（未用完）</span><div class="stat-list">${statBlock('makeup')||'<p class="hint">还没有彩妆</p>'}</div></div>`;
-  h+=`<div class="field"><span class="lbl">其他</span><div class="stat-list"><div><span>记录的总花费</span><span class="mono">¥${spend.toLocaleString('zh-CN',{maximumFractionDigits:0})}</span></div><div><span>一次都没穿过的衣物</span><span class="mono">${never.length}</span></div>${top.length?`<div><span>穿得最多</span><span>${top.map(i=>esc(itemName(i))+' ×'+i.wearCount).join('、')}</span></div>`:''}</div><div class="sheet-actions" style="margin-top:8px"><button class="btn" data-action="subs" data-kind="clothes" data-val="top">编辑小类</button></div></div>`;
+  h+=`<div class="field"><span class="lbl">其他</span><div class="stat-list"><div><span>记录的总花费</span><span class="mono">¥${spend.toLocaleString('zh-CN',{maximumFractionDigits:0})}${spendJ?' + '+spendJ.toLocaleString('zh-CN',{maximumFractionDigits:0})+' 日元':''}</span></div><div><span>一次都没穿过的衣物</span><span class="mono">${never.length}</span></div>${top.length?`<div><span>穿得最多</span><span>${top.map(i=>esc(itemName(i))+' ×'+i.wearCount).join('、')}</span></div>`:''}</div><div class="sheet-actions" style="margin-top:8px"><button class="btn" data-action="subs" data-kind="clothes" data-val="top">编辑小类</button></div></div>`;
   h+=`<div class="field"><span class="lbl">备份（换手机、清浏览器之前一定要做）</span><p class="hint">${Cloud.on?'记录和照片保存在你的 Claude 账号里，只有你自己能看到。手机和电脑登录同一个账号、打开同一个链接，就会自动同步。备份文件是多一份保险。':'现在记录只存在这台设备的这个浏览器里。定期导出一份备份文件，换设备时再导入。'}</p><div class="sheet-actions" style="margin-top:4px"><button class="btn" data-action="export-file">导出备份文件</button><button class="btn" data-action="export-copy">复制备份文本</button></div><div class="sheet-actions" style="margin-top:0"><label class="btn" for="import-file">从文件导入</label><input id="import-file" type="file" accept=".json,application/json" hidden></div><textarea class="inp-area" id="import-text" placeholder="或者把备份文本粘贴到这里，再点「从文本导入」"></textarea><div class="sheet-actions" style="margin-top:0"><button class="btn" data-action="import-text">从文本导入</button></div>${sheet.pendingImport?`<div class="dup has"><p>导入会<b>替换掉</b>现在的全部记录（${S.items.length} 件单品、${S.outfits.length} 套搭配）。</p><div class="sheet-actions" style="margin-top:0"><button class="btn primary" data-action="import-confirm">确定替换</button><button class="btn ghost" data-action="import-cancel">算了</button></div></div>`:''}</div>`;
   h+=`<div class="field"><span class="lbl">危险操作</span><div class="sheet-actions" style="margin-top:0"><button class="btn danger ${sheet.armed?'armed':''}" data-action="wipe">${sheet.armed?'真的全部清空？点这里确认':'清空所有记录'}</button></div></div>`;
   return h;
@@ -1024,6 +1036,12 @@ async function onClick(e){
     case 'f-addsub':syncDraft();sheet.addSub=true;renderSheet();{const ni=document.getElementById('f-newsub');if(ni)ni.focus()}break;
     case 'f-addsub-cancel':syncDraft();sheet.addSub=false;renderSheet();break;
     case 'f-addsub-ok':{const n=(document.getElementById('f-newsub').value||'').trim();syncDraft();if(!n){toast('先写一个名字');break}const d=sheet.draft;const l=[...subsOf(d.kind,d.cat)];if(!l.includes(n)){l.push(n);setSubs(d.kind,d.cat,l)}d.sub=n;sheet.addSub=false;renderSheet();toast('已添加小类「'+n+'」');break}
+    case 'import':openSheet({type:'import',stage:'pick',rows:[],errs:[]});break;
+    case 'imp-stop':if(impCtl)impCtl.abort();break;
+    case 'imp-more':syncImport();sheet.stage='pick';renderSheet(true);break;
+    case 'imp-back':sheet.stage='review';renderSheet(true);break;
+    case 'imp-toggle':syncImport();{const r=sheet.rows[+val];r.on=!r.on;if(r.on&&r.kind==='other')r.on=false}renderSheet();break;
+    case 'imp-save':saveImport();break;
     case 'f-frame-reset':syncDraft();sheet.draft.view=null;renderSheet();break;
     case 'f-uncut':syncDraft();sheet.draft.cutNew=null;sheet.draft.cutRemoved=true;renderSheet();break;
     case 'bslot':ui.bslot=val;render();break;
@@ -1076,6 +1094,10 @@ async function onClick(e){
   }
 }
 document.addEventListener('click',onClick);
+document.addEventListener('change',e=>{
+  if(e.target.dataset&&e.target.dataset.imcat!==undefined&&sheet&&sheet.type==='import'){syncImport();const r=sheet.rows[+e.target.dataset.imcat];const [k,c]=e.target.value.split('|');r.kind=k;r.cat=c||'';r.sub=k!=='other'&&subsOf(k,c).includes(r.sub)?r.sub:'';r.on=k!=='other';renderSheet()}
+  if(e.target.id==='imp-files'&&e.target.files.length&&sheet&&sheet.type==='import'){const fs=[...e.target.files];runImport(fs)}
+});
 document.addEventListener('change',async e=>{
   if(e.target.id==='f-photo'&&e.target.files[0]){syncDraft();try{sheet.draft.photoNew=await compress(e.target.files[0]);sheet.draft.photoRemoved=false;sheet.draft.view=null;sheet.draft.cutNew=null;renderSheet()}catch(err){toast('这张图片读不出来，换一张试试')}}
   if(e.target.id==='import-file'&&e.target.files[0]){const t=await e.target.files[0].text();try{sheet.pendingImport=parseImport(t);renderSheet()}catch(err){toast('这个文件不是我的衣柜的备份')}}
@@ -1108,6 +1130,144 @@ document.addEventListener('pointermove',e=>{
 });
 function endDrag(){if(!drag)return;const m=drag.moved;drag=null;if(m)save()}
 document.addEventListener('pointerup',endDrag);document.addEventListener('pointercancel',endDrag);
+
+/* ============ import from order screenshots (Claude reads them) ============ */
+let impCtl=null;
+function catOptions(sel){
+  return Object.entries(KIND).map(([k,K])=>`<optgroup label="${K.label}">${K.cats.map(c=>`<option value="${k}|${c.key}" ${sel===k+'|'+c.key?'selected':''}>${K.label} · ${c.label}</option>`).join('')}</optgroup>`).join('')+`<option value="other|" ${sel==='other|'?'selected':''}>不是衣服或美妆</option>`;
+}
+function importPrompt(){
+  const cats=Object.entries(KIND).map(([k,K])=>`kind "${k}" (${K.label}):\n`+K.cats.map(c=>`  cat "${c.key}" ${c.label}: ${subsOf(k,c.key).join(' / ')}`).join('\n')).join('\n');
+  return `这张图是购物 App（淘宝、闲鱼、天猫、日本优衣库 UNIQLO、ZOZOTOWN 等）的订单截图，可能是订单列表，也可能是单个订单的详情页。
+请找出截图里**已经购买的每一件商品**（忽略广告、「猜你喜欢」「为你推荐」等推荐商品）。
+不要输出任何收货地址、姓名、电话、订单号、交易号。
+
+每件商品给出：
+- name：简短的中文名字，14 个字以内，品牌 + 关键特征，去掉【狂欢价】新款 包邮 正品 等营销词。例如 "ASICS 黑白板鞋"、"优衣库 摇粒绒外套"
+- brand：品牌，看不出来就 ""
+- price：这件商品实际付的钱（数字，优先用「实付价/实付款/支払金額」，没有就用标价）
+- currency："CNY" 或 "JPY"
+- date：购买日期 YYYY-MM-DD（看「创建时间」「付款时间」「注文日」等），没有就 ""
+- size：尺码（如 "38"、"M"），没有就 ""
+- spec：颜色/规格原文
+- color：主颜色，只能从这些里选一个：${COLORS.map(c=>c[0]+'='+c[1]).join(', ')}
+- kind："clothes" / "skincare" / "makeup" / "other"（鞋、包、配饰都算 clothes）
+- cat：从下面列表里选这个 kind 的 cat key
+- sub：从这个 cat 的小类里选最合适的一个，都不合适就 ""
+- seasons：适合的季节数组，从 "spring","summer","autumn","winter" 里选
+- source：哪个 App（"淘宝"、"闲鱼"、"优衣库" 等）
+- shop：店铺名，没有就 ""
+- bbox：这件商品的**商品小图**在截图里的位置 [x0,y0,x1,y1]，用 0 到 1000 的整数表示（相对于截图的宽和高，左上角是 0,0），框紧商品图本身。
+
+分类列表：
+${cats}
+
+只回复 JSON：{"items":[ ... ]}。截图里没有商品就回复 {"items":[]}。`;
+}
+function fileToImage(file){return new Promise((res,rej)=>{const u=URL.createObjectURL(file);const im=new Image();im.onload=()=>res(im);im.onerror=rej;im.src=u})}
+function cropBox(im,b){
+  if(!Array.isArray(b)||b.length!==4)return null;let [x0,y0,x1,y1]=b.map(Number);if([x0,y0,x1,y1].some(isNaN))return null;
+  if(x1<x0)[x0,x1]=[x1,x0];if(y1<y0)[y0,y1]=[y1,y0];
+  const W=im.naturalWidth,H=im.naturalHeight;let sx=x0/1000*W,sy=y0/1000*H,sw=(x1-x0)/1000*W,sh=(y1-y0)/1000*H;
+  if(sw<8||sh<8)return null;const pad=Math.max(sw,sh)*.02;sx=Math.max(0,sx-pad);sy=Math.max(0,sy-pad);sw=Math.min(W-sx,sw+2*pad);sh=Math.min(H-sy,sh+2*pad);
+  const sc=Math.min(1,700/Math.max(sw,sh));const c=document.createElement('canvas');c.width=Math.round(sw*sc);c.height=Math.round(sh*sc);
+  const cx=c.getContext('2d');cx.fillStyle='#fff';cx.fillRect(0,0,c.width,c.height);cx.drawImage(im,sx,sy,sw,sh,0,0,c.width,c.height);return c.toDataURL('image/jpeg',.88);
+}
+function normRow(r,photo){
+  const kind=['clothes','skincare','makeup'].includes(r.kind)?r.kind:'other';
+  let cat=kind!=='other'&&KIND[kind].cats.some(c=>c.key===r.cat)?r.cat:(kind!=='other'?KIND[kind].cats[0].key:'');
+  const subs=kind!=='other'?subsOf(kind,cat):[];const sub=subs.includes(r.sub)?r.sub:(typeof r.sub==='string'&&r.sub.length<=10?r.sub:'');
+  const price=Number(String(r.price||'').replace(/[^\d.]/g,''))||'';
+  return {on:kind!=='other',kind,cat,sub,name:String(r.name||'').slice(0,30),brand:String(r.brand||'').slice(0,30),price:price===''?'':String(Math.round(price*100)/100),cur:r.currency==='JPY'?'JPY':'CNY',
+    date:/^\d{4}-\d{2}-\d{2}$/.test(r.date||'')?r.date:'',size:String(r.size||'').slice(0,12),spec:String(r.spec||'').slice(0,40),color:COLOR[r.color]?r.color:'',
+    seasons:(Array.isArray(r.seasons)?r.seasons:[]).filter(s=>SEASONS.some(x=>x[0]===s)),source:String(r.source||'').slice(0,12),shop:String(r.shop||'').slice(0,30),photo};
+}
+function impKeyOf(r){return [r.name,r.price,r.date].join('|')}
+function markDups(rows){
+  const seen=new Set(S.items.map(i=>[i.name,i.price,i.date].join('|')));const here=new Set();
+  rows.forEach(r=>{const k=impKeyOf(r);r.dupOld=seen.has(k);r.dupHere=here.has(k);if(r.dupOld||r.dupHere)r.on=false;here.add(k)});
+}
+async function runImport(files){
+  const sample=Cloud.sample;if(!sample){toast('这里用不了截图识别');return}
+  impCtl=new AbortController();sheet.stage='reading';sheet.done=0;sheet.total=files.length;sheet.errs=[];renderSheet();
+  for(let n=0;n<files.length;n++){
+    if(!sheet||sheet.type!=='import'||impCtl.signal.aborted)break;
+    sheet.done=n;sheet.note='';renderSheet();
+    try{
+      const im=await fileToImage(files[n]);
+      const c=document.createElement('canvas');const sc=Math.min(1,2400/Math.max(im.naturalWidth,im.naturalHeight));c.width=Math.round(im.naturalWidth*sc);c.height=Math.round(im.naturalHeight*sc);c.getContext('2d').drawImage(im,0,0,c.width,c.height);
+      const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',.9));
+      const out=await sample.json(importPrompt(),{images:[blob],signal:impCtl.signal});
+      const items=Array.isArray(out&&out.items)?out.items:[];
+      if(!items.length)sheet.errs.push(`第 ${n+1} 张没找到商品`);
+      items.forEach(r=>sheet.rows.push(normRow(r,cropBox(im,r.bbox))));
+      URL.revokeObjectURL(im.src);
+    }catch(e){
+      if(e&&e.code==='cancelled')break;
+      const msg={not_granted:'你没有允许页面使用 Claude，没法识别截图',images_unavailable:'这里不能发送图片给 Claude',image_rejected:'这张图片格式不支持',rate_limited:'用得太频繁了，过一会儿再试',invalid_json:'识别结果看不懂',refused:'Claude 没有识别这张图'}[e&&e.code]||'识别失败';
+      sheet.errs.push(`第 ${n+1} 张：${msg}`);if(e&&(e.code==='not_granted'||e.code==='images_unavailable'||e.code==='rate_limited'))break;
+    }
+  }
+  if(!sheet||sheet.type!=='import')return;
+  markDups(sheet.rows);sheet.stage='review';impCtl=null;renderSheet(true);
+}
+function syncImport(){
+  if(!sheet||sheet.type!=='import'||sheet.stage!=='review')return;
+  sheet.rows.forEach((r,i)=>{const g=id=>document.getElementById(id+'-'+i);const n=g('im-name'),p=g('im-price'),d=g('im-date'),s=g('im-sub'),c=g('im-color');
+    if(n)r.name=n.value.trim();if(p)r.price=p.value.trim();if(d)r.date=d.value;if(s)r.sub=s.value;if(c)r.color=c.value});
+}
+function sheetImport(){
+  let h=head('从订单截图导入');
+  if(sheet.stage==='pick'){
+    h+=`<div class="field"><p class="hint" style="font-size:13.5px;color:var(--ink)">在淘宝、闲鱼、优衣库等 App 里打开「我的订单」或订单详情，截图后在这里选择，一次可以选很多张。</p>
+    <ol class="hint" style="padding-left:18px;margin:4px 0"><li>Claude 会读出每件商品的名字、实付价格、日期、颜色、尺码，并猜好分类。</li><li>商品小图会从截图里自动裁下来，当作这件衣服的照片。</li><li>导入前你可以逐条检查、修改，不想要的取消勾选。</li></ol>
+    <p class="hint">截图只用来识别，不会保存。地址、电话、订单号这些不会被记录。识别会用到你自己 Claude 账号的用量，第一次会问你是否允许。</p></div>
+    <label class="btn primary" for="imp-files" style="width:100%">选择订单截图</label><input id="imp-files" type="file" accept="image/*" multiple hidden>`;
+    if(sheet.rows.length)h+=`<div class="sheet-actions"><button class="btn" data-action="imp-back">回到已识别的 ${sheet.rows.length} 件</button></div>`;
+    return h;
+  }
+  if(sheet.stage==='reading'){
+    const pct=Math.round(sheet.done/sheet.total*100);
+    h+=`<div class="field"><p style="margin:0;font-weight:600">正在识别第 ${sheet.done+1} / ${sheet.total} 张截图…</p><div style="height:8px;border-radius:4px;background:var(--tile);overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--accent);transition:width .3s"></div></div><p class="hint">每张大约要十几秒到一分钟，可以先去做别的，别关掉这个页面。已经识别出 ${sheet.rows.length} 件。</p></div>
+    <div class="sheet-actions"><button class="btn" data-action="imp-stop">停止，先看已识别的</button></div>`;
+    return h;
+  }
+  if(sheet.stage==='saving')return h+`<p>正在保存 ${sheet.saved||0} / ${sheet.rows.filter(r=>r.on).length} 件…</p>`;
+  const on=sheet.rows.filter(r=>r.on).length;
+  if(sheet.errs.length)h+=`<div class="dup has"><p>${sheet.errs.map(esc).join('<br>')}</p></div>`;
+  if(!sheet.rows.length)return h+`<p class="hint">没有识别出商品。换一张更清楚的订单截图试试。</p><div class="sheet-actions"><button class="btn primary" data-action="imp-more">重新选截图</button></div>`;
+  h+=`<p class="hint" style="margin:4px 0 10px">识别出 ${sheet.rows.length} 件。检查一下名字、分类和价格，不想导入的取消勾选。</p><div class="rows">`;
+  sheet.rows.forEach((r,i)=>{
+    const subs=r.kind!=='other'?(()=>{const l=[...subsOf(r.kind,r.cat)];if(r.sub&&!l.includes(r.sub))l.push(r.sub);return l})():[];
+    const sim=r.kind!=='other'?similar({kind:r.kind,cat:r.cat,sub:r.sub,color:r.color}):[];const same=sim.filter(x=>x.same).length;
+    h+=`<div class="imp-row ${r.on?'':'off'}">
+      <button class="imp-check ${r.on?'on':''}" data-action="imp-toggle" data-val="${i}" aria-label="${r.on?'不导入这件':'导入这件'}">${r.on?'✓':''}</button>
+      <div class="thumb">${r.photo?`<img src="${r.photo}" alt="">`:'<span class="hint">无图</span>'}</div>
+      <div class="imp-fields">
+        <input class="newsub" id="im-name-${i}" value="${esc(r.name)}" placeholder="名字" aria-label="名字">
+        <div class="imp-line"><select class="newsub" data-imcat="${i}" aria-label="分类">${catOptions(r.kind+'|'+r.cat)}</select>${subs.length?`<select class="newsub" id="im-sub-${i}" aria-label="小类"><option value="">小类</option>${subs.map(s=>`<option ${s===r.sub?'selected':''}>${esc(s)}</option>`).join('')}</select>`:''}</div>
+        <div class="imp-line"><input class="newsub" id="im-price-${i}" value="${esc(r.price)}" inputmode="decimal" placeholder="价格" aria-label="价格"><span class="hint" style="flex:none">${r.cur==='JPY'?'日元':'元'}</span></div><div class="imp-line"><span class="hint" style="flex:none">购买</span><input class="newsub" id="im-date-${i}" type="date" value="${esc(r.date)}" aria-label="购买日期"></div>
+        ${r.kind==='clothes'?`<div class="imp-line"><select class="newsub" id="im-color-${i}" aria-label="颜色"><option value="">颜色</option>${COLORS.map(([k,n])=>`<option value="${k}" ${r.color===k?'selected':''}>${n}</option>`).join('')}</select><span class="hint">${esc([r.size&&('尺码 '+r.size),r.spec].filter(Boolean).join(' · '))}</span></div>`:''}
+        <span class="hint">${esc([r.source,r.shop].filter(Boolean).join(' · '))}</span>
+        ${r.dupOld?'<span class="badge warn">好像已经导入过</span>':r.dupHere?'<span class="badge warn">和上面重复</span>':sim.length?`<span class="badge ${same?'warn':''}">衣柜里已有同类 ${sim.length} 件${same?'，其中 '+same+' 件同色':''}</span>`:''}
+      </div></div>`});
+  h+=`</div><div class="sheet-actions" style="position:sticky;bottom:-18px;background:var(--bg);padding-block:10px"><button class="btn primary" data-action="imp-save" ${on?'':'disabled'}>导入选中的 ${on} 件</button><button class="btn" data-action="imp-more">再加截图</button></div>`;
+  return h;
+}
+async function saveImport(){
+  syncImport();const rows=sheet.rows.filter(r=>r.on&&r.kind!=='other');if(!rows.length)return;
+  sheet.stage='saving';sheet.saved=0;renderSheet();
+  for(const r of rows){
+    const subs=subsOf(r.kind,r.cat);if(r.sub&&!subs.includes(r.sub))setSubs(r.kind,r.cat,[...subs,r.sub]);
+    const item={id:uid(),kind:r.kind,cat:r.cat,sub:r.sub,name:r.name,brand:r.brand,price:r.price,cur:r.cur==='JPY'?'JPY':undefined,date:r.date,note:[r.source,r.shop].filter(Boolean).join(' · '),status:KIND[r.kind].status[0],created:Date.now()};
+    if(r.kind==='clothes')Object.assign(item,{color:r.color,seasons:r.seasons.length?r.seasons:SEASONS.map(s=>s[0]),size:r.size,material:'',wearCount:0});
+    else Object.assign(item,{shade:r.spec,hex:'',opened:'',pao:'',expiry:''});
+    if(r.cur!=='JPY')delete item.cur;
+    if(r.photo)await storeImage(item,'orig',r.photo);
+    S.items.push(item);sheet.saved++;if(sheet.saved%3===0)renderSheet();
+  }
+  save();const n=rows.length;closeSheet();ui.cat='all';ui.sub='all';ui.season='all';go('clothes');toast(`已导入 ${n} 件`);
+}
 
 /* ============ list framing (zoom + pan) in the edit form ============ */
 let fdrag=null;
