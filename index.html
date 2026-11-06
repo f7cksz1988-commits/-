@@ -432,7 +432,7 @@ function applySnap(snap){
 async function migrate(){
   if(!Cloud.localHad){Cloud.ephemeral=true;return} // nothing of yours yet: show examples, save on first change
   Cloud.dirty=true;setStatus();
-  if(Cloud.assets){for(const [k,d] of [...photoData]){const isCut=k.endsWith('_cut');const i=getItem(isCut?k.slice(0,-4):k);if(!i)continue;try{const r=await Cloud.assets.upload(dataURLtoBlob(d),{type:mimeOf(d)});i[isCut?'cut':'photo']=r.id}catch(e){}}}
+  if(Cloud.assets){for(const [k,d] of [...photoData]){const [iid,w]=splitKey(k);const i=getItem(iid);if(!i)continue;try{const r=await Cloud.assets.upload(dataURLtoBlob(d),{type:mimeOf(d)});i[IMG[w][0]]=r.id}catch(e){}}}
   Cloud.synced=new Map();Cloud.dirty=false;await flush();
   if(!Cloud.error){DB.del('kv','state').catch(()=>{});if(Cloud.assets)DB.clear('photos').catch(()=>{})}
 }
@@ -451,7 +451,7 @@ async function connectCloud(){
       clearTimeout(timer);Cloud.assets=Cloud.assets||await c.use('assets').catch(()=>null);
       Cloud.on=true;Cloud.col=col;Cloud.status='on';clearTimeout(saveT);
       if(snap.empty)await migrate();else applySnap(snap);
-      render();setStatus();return;
+      render();setStatus();setTimeout(ensureDisps,1500);return;
     }
     applySnap(snap);
   },err=>{clearTimeout(timer);Cloud.status=Cloud.on?'error':'unreachable';setStatus()});
@@ -466,15 +466,18 @@ function setStatus(){
   el.hidden=false;el.textContent=t;el.className='sync '+cls;el.setAttribute('aria-label','同步状态：'+t);
 }
 function mimeOf(d){return (String(d).match(/^data:([^;,]+)/)||[])[1]||'image/jpeg'}
-function srcOf(i,which){if(!i)return null;if(which==='cut')return i.cut?'/_blob/'+i.cut:photoURL.get(i.id+'_cut')||null;return i.photo?'/_blob/'+i.photo:photoURL.get(i.id)||null}
-function photoSrc(i){return srcOf(i,'cut')||srcOf(i,'orig')}
+const IMG={orig:['photo',''],cut:['cut','_cut'],disp:['disp','_disp']};
+function splitKey(k){for(const w of ['cut','disp'])if(k.endsWith(IMG[w][1]))return [k.slice(0,-IMG[w][1].length),w];return [k,'orig']}
+function srcOf(i,which){if(!i)return null;const [key,suf]=IMG[which];return i[key]?'/_blob/'+i[key]:photoURL.get(i.id+suf)||null}
+function baseSrc(i){return srcOf(i,'cut')||srcOf(i,'orig')}
+function photoSrc(i){return srcOf(i,'disp')||baseSrc(i)}
 function hasCut(i){return !!srcOf(i,'cut')}
 async function storeImage(item,which,dataURL){
-  const key=which==='cut'?'cut':'photo',lk=which==='cut'?item.id+'_cut':item.id;
+  const [key,suf]=IMG[which],lk=item.id+suf;
   if(Cloud.on&&Cloud.assets){try{const r=await Cloud.assets.upload(dataURLtoBlob(dataURL),{type:mimeOf(dataURL)});if(item[key]&&item[key]!==r.id)Cloud.assets.delete(item[key]).catch(()=>{});item[key]=r.id;rmPhoto(lk);return}catch(e){toast('图片没传上云端，先存在这台设备上')}}
   delete item[key];setPhoto(lk,dataURL);DB.set('photos',lk,dataURL).catch(()=>{storageOK=false;renderBanner()});
 }
-function dropImage(item,which){const key=which==='cut'?'cut':'photo',lk=which==='cut'?item.id+'_cut':item.id;if(item[key]&&Cloud.assets)Cloud.assets.delete(item[key]).catch(()=>{});delete item[key];rmPhoto(lk)}
+function dropImage(item,which){const [key,suf]=IMG[which],lk=item.id+suf;if(item[key]&&Cloud.assets)Cloud.assets.delete(item[key]).catch(()=>{});delete item[key];rmPhoto(lk)}
 function blobToDataURL(b){return new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=rej;fr.readAsDataURL(b)})}
 function freshState(){return{v:2,items:[],outfits:[],board:{pieces:[]},custom:{},sample:false}}
 function boardSlot(i){if(!i)return 'acc';if(i.kind!=='clothes')return 'beauty';return {top:'top',outer:'outer',pants:'bottom',skirt:'bottom',dress:'dress',shoes:'shoes',bag:'bag',acc:'acc',inner:'inner'}[i.cat]||'acc'}
@@ -597,8 +600,29 @@ function thumbSVG(i){
   const c=paint(i.color,[],null);const defs=[];const p=paint(i.color,defs);
   return `<svg viewBox="0 0 60 60" aria-hidden="true"><defs>${defs.join('')}</defs><circle cx="30" cy="30" r="17" fill="${p.f}" stroke="${c.s}" stroke-width="1.5"/><text x="30" y="35" text-anchor="middle" font-size="13" fill="${lum(c.f)>.6?'#333':'#fff'}">${esc((i.sub||'').slice(0,1))}</text></svg>`;
 }
+function hasView(v){return !!(v&&(v.z>1.001||Math.abs(v.x||0)>0.5||Math.abs(v.y||0)>0.5))}
+function loadImg(src){return new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=rej;im.src=src})}
+/* turn the square preview (contain + translate/scale) into a real cropped image */
+async function cropFromView(src,v,isCut){
+  const im=await loadImg(src);const w=im.naturalWidth,h=im.naturalHeight;
+  const p=isCut?.06:0,s=1-2*p,k=Math.min(s/w,s/h),dw=w*k,dh=h*k,x0=p+(s-dw)/2,y0=p+(s-dh)/2;
+  const z=v.z||1,tx=(v.x||0)/100,ty=(v.y||0)/100;
+  let ux0=Math.max(.5+(-.5-tx)/z,x0),ux1=Math.min(.5+(.5-tx)/z,x0+dw),uy0=Math.max(.5+(-.5-ty)/z,y0),uy1=Math.min(.5+(.5-ty)/z,y0+dh);
+  if(ux1-ux0<.01||uy1-uy0<.01)throw new Error('empty');
+  const sx=(ux0-x0)/k,sy=(uy0-y0)/k,sw=(ux1-ux0)/k,sh=(uy1-uy0)/k,sc=Math.min(1,900/Math.max(sw,sh));
+  const c=document.createElement('canvas');c.width=Math.max(1,Math.round(sw*sc));c.height=Math.max(1,Math.round(sh*sc));
+  const cx=c.getContext('2d');if(!isCut){cx.fillStyle='#fff';cx.fillRect(0,0,c.width,c.height)}cx.drawImage(im,sx,sy,sw,sh,0,0,c.width,c.height);
+  if(!isCut)return c.toDataURL('image/jpeg',.88);let u=c.toDataURL('image/webp',.9);if(!u.startsWith('data:image/webp'))u=c.toDataURL('image/png');return u;
+}
+let dispBusy=false;
+async function ensureDisps(){if(dispBusy)return;dispBusy=true;try{const todo=S.items.filter(x=>hasView(x.view)&&!srcOf(x,'disp')&&baseSrc(x));for(const i of todo){await refreshDisp(i)}if(todo.length){save();render()}}finally{dispBusy=false}}
+async function refreshDisp(item){
+  const b=baseSrc(item);
+  if(!b||!hasView(item.view)){dropImage(item,'disp');return}
+  try{await storeImage(item,'disp',await cropFromView(b,item.view,!!srcOf(item,'cut')))}catch(e){dropImage(item,'disp')}
+}
 function viewStyle(v){return v&&(v.z>1||v.x||v.y)?`transform:translate(${v.x||0}%,${v.y||0}%) scale(${v.z||1})`:''}
-function thumbHTML(i,badge='',full=false){const u=photoSrc(i);return `<div class="thumb ${u&&hasCut(i)?'cutimg':''}">${u?`<img src="${u}" alt="" loading="lazy" style="${full?'':viewStyle(i.view)}">`:thumbSVG(i)}${badge}</div>`}
+function thumbHTML(i,badge='',full=false){const u=photoSrc(i);if(srcOf(i,'disp'))full=true;return `<div class="thumb ${u&&hasCut(i)?'cutimg':''}">${u?`<img src="${u}" alt="" loading="lazy" style="${full?'':viewStyle(i.view)}">`:thumbSVG(i)}${badge}</div>`}
 function getItem(id){return S.items.find(i=>i.id===id)}
 /* ============ UI state ============ */
 const ui={tab:'clothes',season:'all',cat:'all',sub:'all',showGone:false,bcat:{skincare:'all',makeup:'all'},bstatus:{skincare:'all',makeup:'all'},q:'',bslot:'top',dseason:'all',sel:-1,editingOutfit:null,check:{kind:'clothes',cat:'top',sub:'',color:''}};
@@ -779,11 +803,13 @@ async function saveDraft(){
   if(d.photoNew)await storeImage(item,'orig',d.photoNew);else if(d.photoRemoved)dropImage(item,'orig');
   if(d.photoNew||d.photoRemoved||d.cutRemoved)dropImage(item,'cut');
   if(d.cutNew)await storeImage(item,'cut',d.cutNew);
+  const vk=JSON.stringify(item.view||null),ok=JSON.stringify(old.view||null);
+  if(d.photoNew||d.photoRemoved||d.cutNew||d.cutRemoved||vk!==ok||(hasView(item.view)&&!srcOf(item,'disp')))await refreshDisp(item);
   if(isNew){item.created=Date.now();S.items.push(item)}
   save();closeSheet();render();toast(isNew?'已添加「'+itemName(item)+'」':'已保存');
 }
 function deleteItem(id){
-  const it=getItem(id);if(it){dropImage(it,'orig');dropImage(it,'cut')}
+  const it=getItem(id);if(it)for(const w in IMG)dropImage(it,w);
   S.items=S.items.filter(i=>i.id!==id);
   S.board.pieces=S.board.pieces.filter(p=>p.id!==id);ui.sel=-1;
   S.outfits.forEach(o=>{o.pieces=(o.pieces||[]).filter(p=>p.id!==id)});
@@ -807,8 +833,8 @@ function sheetItem(){
   if(i.note)rows.push(['备注',esc(i.note)]);
   const inOut=S.outfits.filter(o=>(o.pieces||[]).some(p=>p.id===i.id));
   let h=head(K.label);
-  const ph=photoSrc(i);const v=i.view||{z:1,x:0,y:0};
-  h+=`<div class="tag">${ph?`<div class="zoomwrap"><div class="thumb ${hasCut(i)?'cutimg':''}" id="frameThumb"><img src="${ph}" alt="" draggable="false" style="${viewStyle(v)}"></div><div class="zoomctl"><label class="mini-range">放大<input type="range" id="f-zoom" min="1" max="3" step="0.05" value="${v.z||1}" aria-label="放大图片"></label><button class="btn sm ghost" data-action="frame-reset">看整张</button></div><span class="hint">放大后可以用手指拖动图片。调整会自动保存，列表里的小图也会一起变。</span></div>`:thumbHTML(i)}<div class="tag-card"><h3>${esc(itemName(i))}</h3><p class="crumb">${esc(c.label)} › ${esc(i.sub||'')}${i.sample?' · 示例':''}</p><dl class="kv">${rows.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl></div></div>`;
+  const fv=sheet.framing?sheet.fv.view||{z:1,x:0,y:0}:null;const bs=baseSrc(i);
+  h+=`<div class="tag">${sheet.framing&&bs?`<div class="zoomwrap"><div class="thumb ${hasCut(i)?'cutimg':''}" id="frameThumb"><img src="${bs}" alt="" draggable="false" style="${viewStyle(fv)}"></div><div class="zoomctl"><label class="mini-range">放大<input type="range" id="f-zoom" min="1" max="3" step="0.05" value="${fv.z||1}" aria-label="放大图片"></label></div><span class="hint">拖滑块放大，再用手指拖动图片，框里看到的就是以后显示的样子。</span><div class="photo-acts"><button class="btn sm primary" data-action="frame-done">完成</button><button class="btn sm" data-action="frame-full">用整张图</button><button class="btn sm ghost" data-action="frame-cancel">取消</button></div></div>`:`<div class="zoomwrap">${thumbHTML(i,'',true)}${bs?`<div class="photo-acts"><button class="btn sm" data-action="frame-start">调整显示范围</button></div>`:''}</div>`}<div class="tag-card"><h3>${esc(itemName(i))}</h3><p class="crumb">${esc(c.label)} › ${esc(i.sub||'')}${i.sample?' · 示例':''}</p><dl class="kv">${rows.map(([k,v])=>`<dt>${k}</dt><dd>${v}</dd>`).join('')}</dl></div></div>`;
   if(inOut.length)h+=`<div class="field"><span class="lbl">出现在这些搭配里</span><div class="chips">${inOut.map(o=>`<button class="chip" data-action="open-outfit" data-id="${o.id}">${esc(o.name)}</button>`).join('')}</div></div>`;
   h+=`<div class="sheet-actions">${i.kind==='clothes'&&!isGone(i)?'<button class="btn primary" data-action="worn-item">今天穿了 +1</button>':''}${!isGone(i)?'<button class="btn soft" data-action="tryon">放到拼搭板</button>':''}<button class="btn" data-action="edit-item">编辑</button></div>`;
   if(srcOf(i,'orig'))h+=`<div class="sheet-actions"><button class="btn sm" data-action="item-cut">${hasCut(i)?'重新抠图':'抠图'}</button>${hasCut(i)?'<button class="btn sm ghost" data-action="item-uncut">改回原图</button>':''}</div>`;
@@ -894,7 +920,7 @@ function randomOutfit(){
 async function exportData(){
   const photos={};
   const grab=async(k,local,asset)=>{if(photoData.has(local))photos[k]=photoData.get(local);else if(asset){try{const r=await fetch('/_blob/'+asset);if(r.ok)photos[k]=await blobToDataURL(await r.blob())}catch(e){}}};
-  for(const i of S.items){await grab(i.id,i.id,i.photo);await grab(i.id+'_cut',i.id+'_cut',i.cut)}
+  for(const i of S.items)for(const w in IMG){const k=i.id+IMG[w][1];await grab(k,k,i[IMG[w][0]])}
   return JSON.stringify({app:'wardrobe-journal',version:2,exportedAt:new Date().toISOString(),state:S,photos});
 }
 function parseImport(txt){const o=JSON.parse(txt);if(!o||o.app!=='wardrobe-journal'||!o.state||!Array.isArray(o.state.items))throw new Error('bad');return o}
@@ -902,7 +928,7 @@ async function applyImport(o){
   const st=normalizeState({...freshState(),...o.state});st.sample=false;
   for(const id of [...photoURL.keys()])rmPhoto(id);
   await DB.clear('photos').catch(()=>{});
-  for(const [k,d] of Object.entries(o.photos||{})){const isCut=k.endsWith('_cut');const it=st.items.find(i=>i.id===(isCut?k.slice(0,-4):k));if(!it)continue;await storeImage(it,isCut?'cut':'orig',d)}
+  for(const [k,d] of Object.entries(o.photos||{})){const [iid,w]=splitKey(k);const it=st.items.find(i=>i.id===iid);if(!it)continue;await storeImage(it,w,d)}
   S=st;save();
 }
 async function onClick(e){
@@ -935,10 +961,13 @@ async function onClick(e){
     case 'worn-item':{const i=getItem(sheet.id);i.wearCount=(i.wearCount||0)+1;i.lastWorn=todayStr();save();renderSheet();render();toast('记下了，第 '+i.wearCount+' 次穿');break}
     case 'used-up':{const i=getItem(sheet.id);i.status='用完了';save();renderSheet();render();toast('已标记为用完了');break}
     case 'tryon':{const i=getItem(sheet.id);if(!S.board.pieces.some(p=>p.id===i.id))togglePiece(i.id);ui.bslot=boardSlot(i);save();closeSheet();go('board');break}
-    case 'item-cut':{const i=getItem(sheet.id);openCut(srcOf(i,'orig'),async url=>{toast('正在保存抠好的图…');await storeImage(i,'cut',url);save();renderSheet();render();toast('抠好了')});break}
-    case 'item-uncut':{const i=getItem(sheet.id);dropImage(i,'cut');save();renderSheet();render();toast('已改回原图');break}
+    case 'item-cut':{const i=getItem(sheet.id);openCut(srcOf(i,'orig'),async url=>{toast('正在保存抠好的图…');await storeImage(i,'cut',url);await refreshDisp(i);save();renderSheet();render();toast('抠好了')});break}
+    case 'item-uncut':{const i=getItem(sheet.id);dropImage(i,'cut');await refreshDisp(i);save();renderSheet();render();toast('已改回原图');break}
     case 'f-cut':{syncDraft();const d=sheet.draft;const it=d.id&&getItem(d.id);const src=d.photoNew||(it&&srcOf(it,'orig'));if(src)openCut(src,url=>{d.cutNew=url;d.cutRemoved=false;renderSheet()});break}
-    case 'frame-reset':{const i=getItem(sheet.id);if(i){delete i.view;save();renderSheet();render()}break}
+    case 'frame-start':{const i=getItem(sheet.id);sheet.framing=true;sheet.fv={view:i.view?{...i.view}:{z:1,x:0,y:0}};renderSheet();break}
+    case 'frame-cancel':sheet.framing=false;renderSheet();break;
+    case 'frame-full':case 'frame-done':{const i=getItem(sheet.id);const v=sheet.fv.view;if(a==='frame-full'||!hasView(v))delete i.view;else i.view={z:+(+v.z).toFixed(2),x:Math.round(v.x||0),y:Math.round(v.y||0)};
+      sheet.framing=false;toast('正在生成显示图…');await refreshDisp(i);save();if(sheet&&sheet.type==='item')renderSheet();render();toast(i.view?'已保存显示范围':'已改回整张图');break}
     case 'goto':{const k=el.dataset.kind,c=el.dataset.cat;closeSheet();if(k==='clothes'){ui.season='all';ui.cat=c;ui.sub=val;ui.showGone=false}else{ui.bcat[k]=c;ui.bstatus[k]='all'}go(k);break}
     case 'subs':{syncDraft();openSheet({type:'subs',kind:el.dataset.kind,cat:val});break}
     case 'sr-kind':sheet.kind=val;sheet.cat=KIND[val].cats[0].key;sheet.armed=null;renderSheet();break;
@@ -996,7 +1025,7 @@ async function onClick(e){
     case 'import-text':{const t=document.getElementById('import-text').value.trim();try{sheet.pendingImport=parseImport(t);renderSheet()}catch(err){toast('这段文本不是我的衣柜的备份')}break}
     case 'import-confirm':await applyImport(sheet.pendingImport);sheet.pendingImport=null;closeSheet();render();toast('导入完成');break;
     case 'import-cancel':sheet.pendingImport=null;renderSheet();break;
-    case 'wipe':if(!sheet.armed){sheet.armed=true;renderSheet();break}S.items.forEach(i=>{dropImage(i,'orig');dropImage(i,'cut')});for(const pid of [...photoURL.keys()])rmPhoto(pid);await DB.clear('photos').catch(()=>{});{const av=S.avatar;S=freshState();S.avatar=av}save();closeSheet();render();toast('已全部清空');break;
+    case 'wipe':if(!sheet.armed){sheet.armed=true;renderSheet();break}S.items.forEach(i=>{for(const w in IMG)dropImage(i,w)});for(const pid of [...photoURL.keys()])rmPhoto(pid);await DB.clear('photos').catch(()=>{});{const av=S.avatar;S=freshState();S.avatar=av}save();closeSheet();render();toast('已全部清空');break;
     case 'clear-sample':{const ids=S.items.filter(i=>i.sample).map(i=>i.id);ids.forEach(rmPhoto);S.items=S.items.filter(i=>!i.sample);S.outfits=S.outfits.filter(o=>!o.sample);S.board={pieces:[]};ui.sel=-1;S.sample=false;save();render();toast('示例已清空，点「添加衣服」开始吧');break}
     case 'keep-sample':S.sample=false;save();renderBanner();toast('示例保留着，随时可以在单品里删除');break;
   }
@@ -1038,11 +1067,9 @@ document.addEventListener('pointerup',endDrag);document.addEventListener('pointe
 /* ============ list framing (zoom + pan) in the edit form ============ */
 let fdrag=null;
 function frameClamp(v){const m=(v.z-1)/2*100;v.x=Math.max(-m,Math.min(m,v.x));v.y=Math.max(-m,Math.min(m,v.y));return v}
-function frameTarget(){if(!sheet)return null;if(sheet.type==='form')return sheet.draft;if(sheet.type==='item')return getItem(sheet.id)||null;return null}
+function frameTarget(){if(!sheet)return null;if(sheet.type==='form')return sheet.draft;if(sheet.type==='item'&&sheet.framing)return sheet.fv;return null}
 function frameApply(){const t=frameTarget();const img=document.querySelector('#frameThumb img');if(img&&t)img.style.transform=viewStyle(t.view).replace('transform:','')||'none'}
-function frameCommit(){const t=frameTarget();if(!t||sheet.type!=='item')return;const v=t.view;if(v&&(v.z>1.001||Math.abs(v.x)>0.5||Math.abs(v.y)>0.5))t.view={z:+(+v.z).toFixed(2),x:Math.round(v.x),y:Math.round(v.y)};else delete t.view;save();render()}
 document.addEventListener('input',e=>{if(e.target.id!=='f-zoom')return;const t=frameTarget();if(!t)return;const v=t.view=t.view||{z:1,x:0,y:0};v.z=+e.target.value;frameClamp(v);frameApply()});
-document.addEventListener('change',e=>{if(e.target.id==='f-zoom')frameCommit()});
 document.addEventListener('change',e=>{
   const t=e.target;if(!t.id||!t.id.startsWith('sr-')||t.id==='sr-new'||!sheet||sheet.type!=='subs')return;
   const i=+t.dataset.idx,l=[...subsOf(sheet.kind,sheet.cat)],old=l[i],n=t.value.trim();
@@ -1054,7 +1081,7 @@ document.addEventListener('pointerdown',e=>{const t=e.target.closest('#frameThum
   if(v.z<=1){toast('先拖动「放大」滑块，再拖图片');return}
   fdrag={w:t.getBoundingClientRect().width,sx:e.clientX,sy:e.clientY,ox:v.x,oy:v.y};try{t.setPointerCapture(e.pointerId)}catch(err){}});
 document.addEventListener('pointermove',e=>{if(!fdrag)return;const t=frameTarget();if(!t||!t.view)return;const v=t.view;v.x=fdrag.ox+(e.clientX-fdrag.sx)/fdrag.w*100;v.y=fdrag.oy+(e.clientY-fdrag.sy)/fdrag.w*100;frameClamp(v);frameApply()});
-document.addEventListener('pointerup',()=>{if(fdrag){fdrag=null;frameCommit()}});
+document.addEventListener('pointerup',()=>{fdrag=null});
 
 /* ============ cutout editor ============ */
 const Cut={mode:'erase',bg:'check',undo:[]};
@@ -1186,6 +1213,7 @@ function cutFinish(){
   if(purgeSamples(S))save();
   const t=location.hash.slice(1);if(['clothes','skincare','makeup','outfits','board'].includes(t))ui.tab=t;
   render();setStatus();connectCloud();
+  setTimeout(()=>{if(Cloud.status!=='connecting')ensureDisps()},4000);
   try{if('serviceWorker' in navigator&&/^https?:$/.test(location.protocol)&&document.querySelector('link[rel=manifest]'))navigator.serviceWorker.register('sw.js').catch(()=>{})}catch(e){}
 })();
 </script>
