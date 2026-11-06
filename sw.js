@@ -1,5 +1,5 @@
 // 离线缓存：打开过一次之后，没网也能用。改版时把版本号 +1。
-const CACHE = 'wardrobe-journal-v1';
+const CACHE = 'wardrobe-journal-v2';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-192.png', './icon-512.png'];
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
